@@ -1,0 +1,2991 @@
+{
+  "generated_by": "scripts/build-sbom",
+  "inventory_kind": "licenses",
+  "license_evidence_policy": "Only declarations stored in a lockfile are reported; missing declarations are not inferred.",
+  "lockfiles": [
+    {
+      "ecosystem": "python-uv",
+      "lock_revision": 3,
+      "lock_version": 1,
+      "path": "app/uv.lock",
+      "requires_python": "==3.12.*",
+      "sha256": "6bf3a749045671dfb659dcebaf5bf9dfa69202aa7962472e70ef833d77b02623"
+    },
+    {
+      "ecosystem": "npm",
+      "lockfile_version": 3,
+      "path": "web/package-lock.json",
+      "sha256": "43822c022da807ca9e4cd47c0c896ba1efcf1e9786b1ecb6b8c703299a078132"
+    },
+    {
+      "ecosystem": "python-uv",
+      "lock_revision": 3,
+      "lock_version": 1,
+      "path": "workers/argn/uv.lock",
+      "requires_python": "==3.11.*",
+      "sha256": "b65b83e66f3493b1ebeb49a5060a5b1503380a44bc33be13b153a7e904f85458"
+    },
+    {
+      "ecosystem": "python-uv",
+      "lock_revision": 3,
+      "lock_version": 1,
+      "path": "workers/dpmm/uv.lock",
+      "requires_python": "==3.11.*",
+      "sha256": "aa227523a7596897b9459253af9a6f320cbcb6807e8e564af2dffce18adb43eb"
+    },
+    {
+      "ecosystem": "python-uv",
+      "lock_revision": 3,
+      "lock_version": 1,
+      "path": "workers/eval/uv.lock",
+      "requires_python": "==3.11.*",
+      "sha256": "99372c85caddf033de5acd691ce4ec0f04703a9d7f2355de43936d4f9b6f1347"
+    }
+  ],
+  "packages": [
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/annotated-doc@0.0.4",
+      "lockfile": "app/uv.lock",
+      "name": "annotated-doc",
+      "version": "0.0.4"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/annotated-types@0.7.0",
+      "lockfile": "app/uv.lock",
+      "name": "annotated-types",
+      "version": "0.7.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/anyio@4.14.2",
+      "lockfile": "app/uv.lock",
+      "name": "anyio",
+      "version": "4.14.2"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/certifi@2026.7.22",
+      "lockfile": "app/uv.lock",
+      "name": "certifi",
+      "version": "2026.7.22"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/colorama@0.4.6",
+      "lockfile": "app/uv.lock",
+      "name": "colorama",
+      "version": "0.4.6"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/duckdb@1.5.5",
+      "lockfile": "app/uv.lock",
+      "name": "duckdb",
+      "version": "1.5.5"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/et-xmlfile@2.0.0",
+      "lockfile": "app/uv.lock",
+      "name": "et-xmlfile",
+      "version": "2.0.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/fastapi@0.139.2",
+      "lockfile": "app/uv.lock",
+      "name": "fastapi",
+      "version": "0.139.2"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/h11@0.16.0",
+      "lockfile": "app/uv.lock",
+      "name": "h11",
+      "version": "0.16.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/httpcore@1.0.9",
+      "lockfile": "app/uv.lock",
+      "name": "httpcore",
+      "version": "1.0.9"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/httpx@0.28.1",
+      "lockfile": "app/uv.lock",
+      "name": "httpx",
+      "version": "0.28.1"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/idna@3.18",
+      "lockfile": "app/uv.lock",
+      "name": "idna",
+      "version": "3.18"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/iniconfig@2.3.0",
+      "lockfile": "app/uv.lock",
+      "name": "iniconfig",
+      "version": "2.3.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/jinja2@3.1.6",
+      "lockfile": "app/uv.lock",
+      "name": "jinja2",
+      "version": "3.1.6"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/markupsafe@3.0.3",
+      "lockfile": "app/uv.lock",
+      "name": "markupsafe",
+      "version": "3.0.3"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/openpyxl@3.1.5",
+      "lockfile": "app/uv.lock",
+      "name": "openpyxl",
+      "version": "3.1.5"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/packaging@26.2",
+      "lockfile": "app/uv.lock",
+      "name": "packaging",
+      "version": "26.2"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/pluggy@1.6.0",
+      "lockfile": "app/uv.lock",
+      "name": "pluggy",
+      "version": "1.6.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/psutil@7.2.2",
+      "lockfile": "app/uv.lock",
+      "name": "psutil",
+      "version": "7.2.2"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/pyarrow@25.0.0",
+      "lockfile": "app/uv.lock",
+      "name": "pyarrow",
+      "version": "25.0.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/pydantic@2.12.5",
+      "lockfile": "app/uv.lock",
+      "name": "pydantic",
+      "version": "2.12.5"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/pydantic-core@2.41.5",
+      "lockfile": "app/uv.lock",
+      "name": "pydantic-core",
+      "version": "2.41.5"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/pygments@2.20.0",
+      "lockfile": "app/uv.lock",
+      "name": "pygments",
+      "version": "2.20.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/pytest@9.0.2",
+      "lockfile": "app/uv.lock",
+      "name": "pytest",
+      "version": "9.0.2"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/pytest-asyncio@1.3.0",
+      "lockfile": "app/uv.lock",
+      "name": "pytest-asyncio",
+      "version": "1.3.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/ruff@0.15.6",
+      "lockfile": "app/uv.lock",
+      "name": "ruff",
+      "version": "0.15.6"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/starlette@1.3.1",
+      "lockfile": "app/uv.lock",
+      "name": "starlette",
+      "version": "1.3.1"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/synthetic-table-studio-app@0.1.0",
+      "lockfile": "app/uv.lock",
+      "name": "synthetic-table-studio-app",
+      "version": "0.1.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/typing-extensions@4.16.0",
+      "lockfile": "app/uv.lock",
+      "name": "typing-extensions",
+      "version": "4.16.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/typing-inspection@0.4.2",
+      "lockfile": "app/uv.lock",
+      "name": "typing-inspection",
+      "version": "0.4.2"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "npm",
+      "license_status": "not_recorded_in_npm_lock",
+      "locator": "pkg:npm/synthetic-table-studio-web@0.0.0",
+      "lockfile": "web/package-lock.json",
+      "name": "synthetic-table-studio-web",
+      "package_path": ".",
+      "version": "0.0.0"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@emnapi/core@1.11.1",
+      "lockfile": "web/package-lock.json",
+      "name": "@emnapi/core",
+      "package_path": "node_modules/@emnapi/core",
+      "version": "1.11.1"
+    },
+    {
+      "declared_license": "0BSD",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/tslib@2.8.1",
+      "lockfile": "web/package-lock.json",
+      "name": "tslib",
+      "package_path": "node_modules/@emnapi/core/node_modules/tslib",
+      "version": "2.8.1"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@emnapi/runtime@1.11.1",
+      "lockfile": "web/package-lock.json",
+      "name": "@emnapi/runtime",
+      "package_path": "node_modules/@emnapi/runtime",
+      "version": "1.11.1"
+    },
+    {
+      "declared_license": "0BSD",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/tslib@2.8.1",
+      "lockfile": "web/package-lock.json",
+      "name": "tslib",
+      "package_path": "node_modules/@emnapi/runtime/node_modules/tslib",
+      "version": "2.8.1"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@emnapi/wasi-threads@1.2.2",
+      "lockfile": "web/package-lock.json",
+      "name": "@emnapi/wasi-threads",
+      "package_path": "node_modules/@emnapi/wasi-threads",
+      "version": "1.2.2"
+    },
+    {
+      "declared_license": "0BSD",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/tslib@2.8.1",
+      "lockfile": "web/package-lock.json",
+      "name": "tslib",
+      "package_path": "node_modules/@emnapi/wasi-threads/node_modules/tslib",
+      "version": "2.8.1"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@eslint-community/eslint-utils@4.10.1",
+      "lockfile": "web/package-lock.json",
+      "name": "@eslint-community/eslint-utils",
+      "package_path": "node_modules/@eslint-community/eslint-utils",
+      "version": "4.10.1"
+    },
+    {
+      "declared_license": "Apache-2.0",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/eslint-visitor-keys@3.4.3",
+      "lockfile": "web/package-lock.json",
+      "name": "eslint-visitor-keys",
+      "package_path": "node_modules/@eslint-community/eslint-utils/node_modules/eslint-visitor-keys",
+      "version": "3.4.3"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@eslint-community/regexpp@4.12.2",
+      "lockfile": "web/package-lock.json",
+      "name": "@eslint-community/regexpp",
+      "package_path": "node_modules/@eslint-community/regexpp",
+      "version": "4.12.2"
+    },
+    {
+      "declared_license": "Apache-2.0",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@eslint/config-array@0.23.5",
+      "lockfile": "web/package-lock.json",
+      "name": "@eslint/config-array",
+      "package_path": "node_modules/@eslint/config-array",
+      "version": "0.23.5"
+    },
+    {
+      "declared_license": "Apache-2.0",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@eslint/config-helpers@0.6.0",
+      "lockfile": "web/package-lock.json",
+      "name": "@eslint/config-helpers",
+      "package_path": "node_modules/@eslint/config-helpers",
+      "version": "0.6.0"
+    },
+    {
+      "declared_license": "Apache-2.0",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@eslint/core@1.2.1",
+      "lockfile": "web/package-lock.json",
+      "name": "@eslint/core",
+      "package_path": "node_modules/@eslint/core",
+      "version": "1.2.1"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@eslint/js@10.0.1",
+      "lockfile": "web/package-lock.json",
+      "name": "@eslint/js",
+      "package_path": "node_modules/@eslint/js",
+      "version": "10.0.1"
+    },
+    {
+      "declared_license": "Apache-2.0",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@eslint/object-schema@3.0.5",
+      "lockfile": "web/package-lock.json",
+      "name": "@eslint/object-schema",
+      "package_path": "node_modules/@eslint/object-schema",
+      "version": "3.0.5"
+    },
+    {
+      "declared_license": "Apache-2.0",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@eslint/plugin-kit@0.7.2",
+      "lockfile": "web/package-lock.json",
+      "name": "@eslint/plugin-kit",
+      "package_path": "node_modules/@eslint/plugin-kit",
+      "version": "0.7.2"
+    },
+    {
+      "declared_license": "Apache-2.0",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@humanfs/core@0.19.2",
+      "lockfile": "web/package-lock.json",
+      "name": "@humanfs/core",
+      "package_path": "node_modules/@humanfs/core",
+      "version": "0.19.2"
+    },
+    {
+      "declared_license": "Apache-2.0",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@humanfs/node@0.16.8",
+      "lockfile": "web/package-lock.json",
+      "name": "@humanfs/node",
+      "package_path": "node_modules/@humanfs/node",
+      "version": "0.16.8"
+    },
+    {
+      "declared_license": "Apache-2.0",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@humanfs/types@0.15.0",
+      "lockfile": "web/package-lock.json",
+      "name": "@humanfs/types",
+      "package_path": "node_modules/@humanfs/types",
+      "version": "0.15.0"
+    },
+    {
+      "declared_license": "Apache-2.0",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@humanwhocodes/module-importer@1.0.1",
+      "lockfile": "web/package-lock.json",
+      "name": "@humanwhocodes/module-importer",
+      "package_path": "node_modules/@humanwhocodes/module-importer",
+      "version": "1.0.1"
+    },
+    {
+      "declared_license": "Apache-2.0",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@humanwhocodes/retry@0.4.3",
+      "lockfile": "web/package-lock.json",
+      "name": "@humanwhocodes/retry",
+      "package_path": "node_modules/@humanwhocodes/retry",
+      "version": "0.4.3"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@napi-rs/wasm-runtime@1.1.6",
+      "lockfile": "web/package-lock.json",
+      "name": "@napi-rs/wasm-runtime",
+      "package_path": "node_modules/@napi-rs/wasm-runtime",
+      "version": "1.1.6"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@oxc-project/types@0.139.0",
+      "lockfile": "web/package-lock.json",
+      "name": "@oxc-project/types",
+      "package_path": "node_modules/@oxc-project/types",
+      "version": "0.139.0"
+    },
+    {
+      "declared_license": "Apache-2.0",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@playwright/test@1.61.1",
+      "lockfile": "web/package-lock.json",
+      "name": "@playwright/test",
+      "package_path": "node_modules/@playwright/test",
+      "version": "1.61.1"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@rolldown/binding-android-arm64@1.1.5",
+      "lockfile": "web/package-lock.json",
+      "name": "@rolldown/binding-android-arm64",
+      "package_path": "node_modules/@rolldown/binding-android-arm64",
+      "version": "1.1.5"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@rolldown/binding-darwin-arm64@1.1.5",
+      "lockfile": "web/package-lock.json",
+      "name": "@rolldown/binding-darwin-arm64",
+      "package_path": "node_modules/@rolldown/binding-darwin-arm64",
+      "version": "1.1.5"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@rolldown/binding-darwin-x64@1.1.5",
+      "lockfile": "web/package-lock.json",
+      "name": "@rolldown/binding-darwin-x64",
+      "package_path": "node_modules/@rolldown/binding-darwin-x64",
+      "version": "1.1.5"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@rolldown/binding-freebsd-x64@1.1.5",
+      "lockfile": "web/package-lock.json",
+      "name": "@rolldown/binding-freebsd-x64",
+      "package_path": "node_modules/@rolldown/binding-freebsd-x64",
+      "version": "1.1.5"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@rolldown/binding-linux-arm-gnueabihf@1.1.5",
+      "lockfile": "web/package-lock.json",
+      "name": "@rolldown/binding-linux-arm-gnueabihf",
+      "package_path": "node_modules/@rolldown/binding-linux-arm-gnueabihf",
+      "version": "1.1.5"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@rolldown/binding-linux-arm64-gnu@1.1.5",
+      "lockfile": "web/package-lock.json",
+      "name": "@rolldown/binding-linux-arm64-gnu",
+      "package_path": "node_modules/@rolldown/binding-linux-arm64-gnu",
+      "version": "1.1.5"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@rolldown/binding-linux-arm64-musl@1.1.5",
+      "lockfile": "web/package-lock.json",
+      "name": "@rolldown/binding-linux-arm64-musl",
+      "package_path": "node_modules/@rolldown/binding-linux-arm64-musl",
+      "version": "1.1.5"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@rolldown/binding-linux-ppc64-gnu@1.1.5",
+      "lockfile": "web/package-lock.json",
+      "name": "@rolldown/binding-linux-ppc64-gnu",
+      "package_path": "node_modules/@rolldown/binding-linux-ppc64-gnu",
+      "version": "1.1.5"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@rolldown/binding-linux-s390x-gnu@1.1.5",
+      "lockfile": "web/package-lock.json",
+      "name": "@rolldown/binding-linux-s390x-gnu",
+      "package_path": "node_modules/@rolldown/binding-linux-s390x-gnu",
+      "version": "1.1.5"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@rolldown/binding-linux-x64-gnu@1.1.5",
+      "lockfile": "web/package-lock.json",
+      "name": "@rolldown/binding-linux-x64-gnu",
+      "package_path": "node_modules/@rolldown/binding-linux-x64-gnu",
+      "version": "1.1.5"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@rolldown/binding-linux-x64-musl@1.1.5",
+      "lockfile": "web/package-lock.json",
+      "name": "@rolldown/binding-linux-x64-musl",
+      "package_path": "node_modules/@rolldown/binding-linux-x64-musl",
+      "version": "1.1.5"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@rolldown/binding-openharmony-arm64@1.1.5",
+      "lockfile": "web/package-lock.json",
+      "name": "@rolldown/binding-openharmony-arm64",
+      "package_path": "node_modules/@rolldown/binding-openharmony-arm64",
+      "version": "1.1.5"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@rolldown/binding-wasm32-wasi@1.1.5",
+      "lockfile": "web/package-lock.json",
+      "name": "@rolldown/binding-wasm32-wasi",
+      "package_path": "node_modules/@rolldown/binding-wasm32-wasi",
+      "version": "1.1.5"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@rolldown/binding-win32-arm64-msvc@1.1.5",
+      "lockfile": "web/package-lock.json",
+      "name": "@rolldown/binding-win32-arm64-msvc",
+      "package_path": "node_modules/@rolldown/binding-win32-arm64-msvc",
+      "version": "1.1.5"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@rolldown/binding-win32-x64-msvc@1.1.5",
+      "lockfile": "web/package-lock.json",
+      "name": "@rolldown/binding-win32-x64-msvc",
+      "package_path": "node_modules/@rolldown/binding-win32-x64-msvc",
+      "version": "1.1.5"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@rolldown/pluginutils@1.0.1",
+      "lockfile": "web/package-lock.json",
+      "name": "@rolldown/pluginutils",
+      "package_path": "node_modules/@rolldown/pluginutils",
+      "version": "1.0.1"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@tybys/wasm-util@0.10.3",
+      "lockfile": "web/package-lock.json",
+      "name": "@tybys/wasm-util",
+      "package_path": "node_modules/@tybys/wasm-util",
+      "version": "0.10.3"
+    },
+    {
+      "declared_license": "0BSD",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/tslib@2.8.1",
+      "lockfile": "web/package-lock.json",
+      "name": "tslib",
+      "package_path": "node_modules/@tybys/wasm-util/node_modules/tslib",
+      "version": "2.8.1"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@types/esrecurse@4.3.1",
+      "lockfile": "web/package-lock.json",
+      "name": "@types/esrecurse",
+      "package_path": "node_modules/@types/esrecurse",
+      "version": "4.3.1"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@types/estree@1.0.9",
+      "lockfile": "web/package-lock.json",
+      "name": "@types/estree",
+      "package_path": "node_modules/@types/estree",
+      "version": "1.0.9"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@types/json-schema@7.0.15",
+      "lockfile": "web/package-lock.json",
+      "name": "@types/json-schema",
+      "package_path": "node_modules/@types/json-schema",
+      "version": "7.0.15"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@types/node@24.10.0",
+      "lockfile": "web/package-lock.json",
+      "name": "@types/node",
+      "package_path": "node_modules/@types/node",
+      "version": "24.10.0"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@types/react@19.2.17",
+      "lockfile": "web/package-lock.json",
+      "name": "@types/react",
+      "package_path": "node_modules/@types/react",
+      "version": "19.2.17"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@types/react-dom@19.2.3",
+      "lockfile": "web/package-lock.json",
+      "name": "@types/react-dom",
+      "package_path": "node_modules/@types/react-dom",
+      "version": "19.2.3"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@typescript-eslint/eslint-plugin@8.65.0",
+      "lockfile": "web/package-lock.json",
+      "name": "@typescript-eslint/eslint-plugin",
+      "package_path": "node_modules/@typescript-eslint/eslint-plugin",
+      "version": "8.65.0"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/ignore@7.0.6",
+      "lockfile": "web/package-lock.json",
+      "name": "ignore",
+      "package_path": "node_modules/@typescript-eslint/eslint-plugin/node_modules/ignore",
+      "version": "7.0.6"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@typescript-eslint/parser@8.65.0",
+      "lockfile": "web/package-lock.json",
+      "name": "@typescript-eslint/parser",
+      "package_path": "node_modules/@typescript-eslint/parser",
+      "version": "8.65.0"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@typescript-eslint/project-service@8.65.0",
+      "lockfile": "web/package-lock.json",
+      "name": "@typescript-eslint/project-service",
+      "package_path": "node_modules/@typescript-eslint/project-service",
+      "version": "8.65.0"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@typescript-eslint/scope-manager@8.65.0",
+      "lockfile": "web/package-lock.json",
+      "name": "@typescript-eslint/scope-manager",
+      "package_path": "node_modules/@typescript-eslint/scope-manager",
+      "version": "8.65.0"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@typescript-eslint/tsconfig-utils@8.65.0",
+      "lockfile": "web/package-lock.json",
+      "name": "@typescript-eslint/tsconfig-utils",
+      "package_path": "node_modules/@typescript-eslint/tsconfig-utils",
+      "version": "8.65.0"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@typescript-eslint/type-utils@8.65.0",
+      "lockfile": "web/package-lock.json",
+      "name": "@typescript-eslint/type-utils",
+      "package_path": "node_modules/@typescript-eslint/type-utils",
+      "version": "8.65.0"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@typescript-eslint/types@8.65.0",
+      "lockfile": "web/package-lock.json",
+      "name": "@typescript-eslint/types",
+      "package_path": "node_modules/@typescript-eslint/types",
+      "version": "8.65.0"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@typescript-eslint/typescript-estree@8.65.0",
+      "lockfile": "web/package-lock.json",
+      "name": "@typescript-eslint/typescript-estree",
+      "package_path": "node_modules/@typescript-eslint/typescript-estree",
+      "version": "8.65.0"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@typescript-eslint/utils@8.65.0",
+      "lockfile": "web/package-lock.json",
+      "name": "@typescript-eslint/utils",
+      "package_path": "node_modules/@typescript-eslint/utils",
+      "version": "8.65.0"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@typescript-eslint/visitor-keys@8.65.0",
+      "lockfile": "web/package-lock.json",
+      "name": "@typescript-eslint/visitor-keys",
+      "package_path": "node_modules/@typescript-eslint/visitor-keys",
+      "version": "8.65.0"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/@vitejs/plugin-react@6.0.4",
+      "lockfile": "web/package-lock.json",
+      "name": "@vitejs/plugin-react",
+      "package_path": "node_modules/@vitejs/plugin-react",
+      "version": "6.0.4"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/acorn@8.17.0",
+      "lockfile": "web/package-lock.json",
+      "name": "acorn",
+      "package_path": "node_modules/acorn",
+      "version": "8.17.0"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/acorn-jsx@5.3.2",
+      "lockfile": "web/package-lock.json",
+      "name": "acorn-jsx",
+      "package_path": "node_modules/acorn-jsx",
+      "version": "5.3.2"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/ajv@6.15.0",
+      "lockfile": "web/package-lock.json",
+      "name": "ajv",
+      "package_path": "node_modules/ajv",
+      "version": "6.15.0"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/balanced-match@4.0.4",
+      "lockfile": "web/package-lock.json",
+      "name": "balanced-match",
+      "package_path": "node_modules/balanced-match",
+      "version": "4.0.4"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/brace-expansion@5.0.7",
+      "lockfile": "web/package-lock.json",
+      "name": "brace-expansion",
+      "package_path": "node_modules/brace-expansion",
+      "version": "5.0.7"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/cross-spawn@7.0.6",
+      "lockfile": "web/package-lock.json",
+      "name": "cross-spawn",
+      "package_path": "node_modules/cross-spawn",
+      "version": "7.0.6"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/csstype@3.2.3",
+      "lockfile": "web/package-lock.json",
+      "name": "csstype",
+      "package_path": "node_modules/csstype",
+      "version": "3.2.3"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/debug@4.4.3",
+      "lockfile": "web/package-lock.json",
+      "name": "debug",
+      "package_path": "node_modules/debug",
+      "version": "4.4.3"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/deep-is@0.1.4",
+      "lockfile": "web/package-lock.json",
+      "name": "deep-is",
+      "package_path": "node_modules/deep-is",
+      "version": "0.1.4"
+    },
+    {
+      "declared_license": "Apache-2.0",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/detect-libc@2.1.2",
+      "lockfile": "web/package-lock.json",
+      "name": "detect-libc",
+      "package_path": "node_modules/detect-libc",
+      "version": "2.1.2"
+    },
+    {
+      "declared_license": "Apache-2.0",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/echarts@6.1.0",
+      "lockfile": "web/package-lock.json",
+      "name": "echarts",
+      "package_path": "node_modules/echarts",
+      "version": "6.1.0"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/escape-string-regexp@4.0.0",
+      "lockfile": "web/package-lock.json",
+      "name": "escape-string-regexp",
+      "package_path": "node_modules/escape-string-regexp",
+      "version": "4.0.0"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/eslint@10.7.0",
+      "lockfile": "web/package-lock.json",
+      "name": "eslint",
+      "package_path": "node_modules/eslint",
+      "version": "10.7.0"
+    },
+    {
+      "declared_license": "BSD-2-Clause",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/eslint-scope@9.1.2",
+      "lockfile": "web/package-lock.json",
+      "name": "eslint-scope",
+      "package_path": "node_modules/eslint-scope",
+      "version": "9.1.2"
+    },
+    {
+      "declared_license": "Apache-2.0",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/eslint-visitor-keys@5.0.1",
+      "lockfile": "web/package-lock.json",
+      "name": "eslint-visitor-keys",
+      "package_path": "node_modules/eslint-visitor-keys",
+      "version": "5.0.1"
+    },
+    {
+      "declared_license": "BSD-2-Clause",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/espree@11.2.0",
+      "lockfile": "web/package-lock.json",
+      "name": "espree",
+      "package_path": "node_modules/espree",
+      "version": "11.2.0"
+    },
+    {
+      "declared_license": "BSD-3-Clause",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/esquery@1.7.0",
+      "lockfile": "web/package-lock.json",
+      "name": "esquery",
+      "package_path": "node_modules/esquery",
+      "version": "1.7.0"
+    },
+    {
+      "declared_license": "BSD-2-Clause",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/esrecurse@4.3.0",
+      "lockfile": "web/package-lock.json",
+      "name": "esrecurse",
+      "package_path": "node_modules/esrecurse",
+      "version": "4.3.0"
+    },
+    {
+      "declared_license": "BSD-2-Clause",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/estraverse@5.3.0",
+      "lockfile": "web/package-lock.json",
+      "name": "estraverse",
+      "package_path": "node_modules/estraverse",
+      "version": "5.3.0"
+    },
+    {
+      "declared_license": "BSD-2-Clause",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/esutils@2.0.3",
+      "lockfile": "web/package-lock.json",
+      "name": "esutils",
+      "package_path": "node_modules/esutils",
+      "version": "2.0.3"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/fast-deep-equal@3.1.3",
+      "lockfile": "web/package-lock.json",
+      "name": "fast-deep-equal",
+      "package_path": "node_modules/fast-deep-equal",
+      "version": "3.1.3"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/fast-json-stable-stringify@2.1.0",
+      "lockfile": "web/package-lock.json",
+      "name": "fast-json-stable-stringify",
+      "package_path": "node_modules/fast-json-stable-stringify",
+      "version": "2.1.0"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/fast-levenshtein@2.0.6",
+      "lockfile": "web/package-lock.json",
+      "name": "fast-levenshtein",
+      "package_path": "node_modules/fast-levenshtein",
+      "version": "2.0.6"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/fdir@6.5.0",
+      "lockfile": "web/package-lock.json",
+      "name": "fdir",
+      "package_path": "node_modules/fdir",
+      "version": "6.5.0"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/file-entry-cache@8.0.0",
+      "lockfile": "web/package-lock.json",
+      "name": "file-entry-cache",
+      "package_path": "node_modules/file-entry-cache",
+      "version": "8.0.0"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/find-up@5.0.0",
+      "lockfile": "web/package-lock.json",
+      "name": "find-up",
+      "package_path": "node_modules/find-up",
+      "version": "5.0.0"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/flat-cache@4.0.1",
+      "lockfile": "web/package-lock.json",
+      "name": "flat-cache",
+      "package_path": "node_modules/flat-cache",
+      "version": "4.0.1"
+    },
+    {
+      "declared_license": "ISC",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/flatted@3.4.2",
+      "lockfile": "web/package-lock.json",
+      "name": "flatted",
+      "package_path": "node_modules/flatted",
+      "version": "3.4.2"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/fsevents@2.3.2",
+      "lockfile": "web/package-lock.json",
+      "name": "fsevents",
+      "package_path": "node_modules/fsevents",
+      "version": "2.3.2"
+    },
+    {
+      "declared_license": "ISC",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/glob-parent@6.0.2",
+      "lockfile": "web/package-lock.json",
+      "name": "glob-parent",
+      "package_path": "node_modules/glob-parent",
+      "version": "6.0.2"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/globals@17.7.0",
+      "lockfile": "web/package-lock.json",
+      "name": "globals",
+      "package_path": "node_modules/globals",
+      "version": "17.7.0"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/ignore@5.3.2",
+      "lockfile": "web/package-lock.json",
+      "name": "ignore",
+      "package_path": "node_modules/ignore",
+      "version": "5.3.2"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/imurmurhash@0.1.4",
+      "lockfile": "web/package-lock.json",
+      "name": "imurmurhash",
+      "package_path": "node_modules/imurmurhash",
+      "version": "0.1.4"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/is-extglob@2.1.1",
+      "lockfile": "web/package-lock.json",
+      "name": "is-extglob",
+      "package_path": "node_modules/is-extglob",
+      "version": "2.1.1"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/is-glob@4.0.3",
+      "lockfile": "web/package-lock.json",
+      "name": "is-glob",
+      "package_path": "node_modules/is-glob",
+      "version": "4.0.3"
+    },
+    {
+      "declared_license": "ISC",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/isexe@2.0.0",
+      "lockfile": "web/package-lock.json",
+      "name": "isexe",
+      "package_path": "node_modules/isexe",
+      "version": "2.0.0"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/json-buffer@3.0.1",
+      "lockfile": "web/package-lock.json",
+      "name": "json-buffer",
+      "package_path": "node_modules/json-buffer",
+      "version": "3.0.1"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/json-schema-traverse@0.4.1",
+      "lockfile": "web/package-lock.json",
+      "name": "json-schema-traverse",
+      "package_path": "node_modules/json-schema-traverse",
+      "version": "0.4.1"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/json-stable-stringify-without-jsonify@1.0.1",
+      "lockfile": "web/package-lock.json",
+      "name": "json-stable-stringify-without-jsonify",
+      "package_path": "node_modules/json-stable-stringify-without-jsonify",
+      "version": "1.0.1"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/keyv@4.5.4",
+      "lockfile": "web/package-lock.json",
+      "name": "keyv",
+      "package_path": "node_modules/keyv",
+      "version": "4.5.4"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/levn@0.4.1",
+      "lockfile": "web/package-lock.json",
+      "name": "levn",
+      "package_path": "node_modules/levn",
+      "version": "0.4.1"
+    },
+    {
+      "declared_license": "MPL-2.0",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/lightningcss@1.33.0",
+      "lockfile": "web/package-lock.json",
+      "name": "lightningcss",
+      "package_path": "node_modules/lightningcss",
+      "version": "1.33.0"
+    },
+    {
+      "declared_license": "MPL-2.0",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/lightningcss-android-arm64@1.33.0",
+      "lockfile": "web/package-lock.json",
+      "name": "lightningcss-android-arm64",
+      "package_path": "node_modules/lightningcss-android-arm64",
+      "version": "1.33.0"
+    },
+    {
+      "declared_license": "MPL-2.0",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/lightningcss-darwin-arm64@1.33.0",
+      "lockfile": "web/package-lock.json",
+      "name": "lightningcss-darwin-arm64",
+      "package_path": "node_modules/lightningcss-darwin-arm64",
+      "version": "1.33.0"
+    },
+    {
+      "declared_license": "MPL-2.0",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/lightningcss-darwin-x64@1.33.0",
+      "lockfile": "web/package-lock.json",
+      "name": "lightningcss-darwin-x64",
+      "package_path": "node_modules/lightningcss-darwin-x64",
+      "version": "1.33.0"
+    },
+    {
+      "declared_license": "MPL-2.0",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/lightningcss-freebsd-x64@1.33.0",
+      "lockfile": "web/package-lock.json",
+      "name": "lightningcss-freebsd-x64",
+      "package_path": "node_modules/lightningcss-freebsd-x64",
+      "version": "1.33.0"
+    },
+    {
+      "declared_license": "MPL-2.0",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/lightningcss-linux-arm-gnueabihf@1.33.0",
+      "lockfile": "web/package-lock.json",
+      "name": "lightningcss-linux-arm-gnueabihf",
+      "package_path": "node_modules/lightningcss-linux-arm-gnueabihf",
+      "version": "1.33.0"
+    },
+    {
+      "declared_license": "MPL-2.0",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/lightningcss-linux-arm64-gnu@1.33.0",
+      "lockfile": "web/package-lock.json",
+      "name": "lightningcss-linux-arm64-gnu",
+      "package_path": "node_modules/lightningcss-linux-arm64-gnu",
+      "version": "1.33.0"
+    },
+    {
+      "declared_license": "MPL-2.0",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/lightningcss-linux-arm64-musl@1.33.0",
+      "lockfile": "web/package-lock.json",
+      "name": "lightningcss-linux-arm64-musl",
+      "package_path": "node_modules/lightningcss-linux-arm64-musl",
+      "version": "1.33.0"
+    },
+    {
+      "declared_license": "MPL-2.0",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/lightningcss-linux-x64-gnu@1.33.0",
+      "lockfile": "web/package-lock.json",
+      "name": "lightningcss-linux-x64-gnu",
+      "package_path": "node_modules/lightningcss-linux-x64-gnu",
+      "version": "1.33.0"
+    },
+    {
+      "declared_license": "MPL-2.0",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/lightningcss-linux-x64-musl@1.33.0",
+      "lockfile": "web/package-lock.json",
+      "name": "lightningcss-linux-x64-musl",
+      "package_path": "node_modules/lightningcss-linux-x64-musl",
+      "version": "1.33.0"
+    },
+    {
+      "declared_license": "MPL-2.0",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/lightningcss-win32-arm64-msvc@1.33.0",
+      "lockfile": "web/package-lock.json",
+      "name": "lightningcss-win32-arm64-msvc",
+      "package_path": "node_modules/lightningcss-win32-arm64-msvc",
+      "version": "1.33.0"
+    },
+    {
+      "declared_license": "MPL-2.0",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/lightningcss-win32-x64-msvc@1.33.0",
+      "lockfile": "web/package-lock.json",
+      "name": "lightningcss-win32-x64-msvc",
+      "package_path": "node_modules/lightningcss-win32-x64-msvc",
+      "version": "1.33.0"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/locate-path@6.0.0",
+      "lockfile": "web/package-lock.json",
+      "name": "locate-path",
+      "package_path": "node_modules/locate-path",
+      "version": "6.0.0"
+    },
+    {
+      "declared_license": "BlueOak-1.0.0",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/minimatch@10.2.5",
+      "lockfile": "web/package-lock.json",
+      "name": "minimatch",
+      "package_path": "node_modules/minimatch",
+      "version": "10.2.5"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/ms@2.1.3",
+      "lockfile": "web/package-lock.json",
+      "name": "ms",
+      "package_path": "node_modules/ms",
+      "version": "2.1.3"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/nanoid@3.3.16",
+      "lockfile": "web/package-lock.json",
+      "name": "nanoid",
+      "package_path": "node_modules/nanoid",
+      "version": "3.3.16"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/natural-compare@1.4.0",
+      "lockfile": "web/package-lock.json",
+      "name": "natural-compare",
+      "package_path": "node_modules/natural-compare",
+      "version": "1.4.0"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/optionator@0.9.4",
+      "lockfile": "web/package-lock.json",
+      "name": "optionator",
+      "package_path": "node_modules/optionator",
+      "version": "0.9.4"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/p-limit@3.1.0",
+      "lockfile": "web/package-lock.json",
+      "name": "p-limit",
+      "package_path": "node_modules/p-limit",
+      "version": "3.1.0"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/p-locate@5.0.0",
+      "lockfile": "web/package-lock.json",
+      "name": "p-locate",
+      "package_path": "node_modules/p-locate",
+      "version": "5.0.0"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/path-exists@4.0.0",
+      "lockfile": "web/package-lock.json",
+      "name": "path-exists",
+      "package_path": "node_modules/path-exists",
+      "version": "4.0.0"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/path-key@3.1.1",
+      "lockfile": "web/package-lock.json",
+      "name": "path-key",
+      "package_path": "node_modules/path-key",
+      "version": "3.1.1"
+    },
+    {
+      "declared_license": "ISC",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/picocolors@1.1.1",
+      "lockfile": "web/package-lock.json",
+      "name": "picocolors",
+      "package_path": "node_modules/picocolors",
+      "version": "1.1.1"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/picomatch@4.0.5",
+      "lockfile": "web/package-lock.json",
+      "name": "picomatch",
+      "package_path": "node_modules/picomatch",
+      "version": "4.0.5"
+    },
+    {
+      "declared_license": "Apache-2.0",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/playwright@1.61.1",
+      "lockfile": "web/package-lock.json",
+      "name": "playwright",
+      "package_path": "node_modules/playwright",
+      "version": "1.61.1"
+    },
+    {
+      "declared_license": "Apache-2.0",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/playwright-core@1.61.1",
+      "lockfile": "web/package-lock.json",
+      "name": "playwright-core",
+      "package_path": "node_modules/playwright-core",
+      "version": "1.61.1"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/postcss@8.5.22",
+      "lockfile": "web/package-lock.json",
+      "name": "postcss",
+      "package_path": "node_modules/postcss",
+      "version": "8.5.22"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/prelude-ls@1.2.1",
+      "lockfile": "web/package-lock.json",
+      "name": "prelude-ls",
+      "package_path": "node_modules/prelude-ls",
+      "version": "1.2.1"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/punycode@2.3.1",
+      "lockfile": "web/package-lock.json",
+      "name": "punycode",
+      "package_path": "node_modules/punycode",
+      "version": "2.3.1"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/react@19.2.0",
+      "lockfile": "web/package-lock.json",
+      "name": "react",
+      "package_path": "node_modules/react",
+      "version": "19.2.0"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/react-dom@19.2.0",
+      "lockfile": "web/package-lock.json",
+      "name": "react-dom",
+      "package_path": "node_modules/react-dom",
+      "version": "19.2.0"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/rolldown@1.1.5",
+      "lockfile": "web/package-lock.json",
+      "name": "rolldown",
+      "package_path": "node_modules/rolldown",
+      "version": "1.1.5"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/scheduler@0.27.0",
+      "lockfile": "web/package-lock.json",
+      "name": "scheduler",
+      "package_path": "node_modules/scheduler",
+      "version": "0.27.0"
+    },
+    {
+      "declared_license": "ISC",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/semver@7.8.5",
+      "lockfile": "web/package-lock.json",
+      "name": "semver",
+      "package_path": "node_modules/semver",
+      "version": "7.8.5"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/shebang-command@2.0.0",
+      "lockfile": "web/package-lock.json",
+      "name": "shebang-command",
+      "package_path": "node_modules/shebang-command",
+      "version": "2.0.0"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/shebang-regex@3.0.0",
+      "lockfile": "web/package-lock.json",
+      "name": "shebang-regex",
+      "package_path": "node_modules/shebang-regex",
+      "version": "3.0.0"
+    },
+    {
+      "declared_license": "BSD-3-Clause",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/source-map-js@1.2.1",
+      "lockfile": "web/package-lock.json",
+      "name": "source-map-js",
+      "package_path": "node_modules/source-map-js",
+      "version": "1.2.1"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/tinyglobby@0.2.17",
+      "lockfile": "web/package-lock.json",
+      "name": "tinyglobby",
+      "package_path": "node_modules/tinyglobby",
+      "version": "0.2.17"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/ts-api-utils@2.5.0",
+      "lockfile": "web/package-lock.json",
+      "name": "ts-api-utils",
+      "package_path": "node_modules/ts-api-utils",
+      "version": "2.5.0"
+    },
+    {
+      "declared_license": "0BSD",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/tslib@2.3.0",
+      "lockfile": "web/package-lock.json",
+      "name": "tslib",
+      "package_path": "node_modules/tslib",
+      "version": "2.3.0"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/type-check@0.4.0",
+      "lockfile": "web/package-lock.json",
+      "name": "type-check",
+      "package_path": "node_modules/type-check",
+      "version": "0.4.0"
+    },
+    {
+      "declared_license": "Apache-2.0",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/typescript@5.9.3",
+      "lockfile": "web/package-lock.json",
+      "name": "typescript",
+      "package_path": "node_modules/typescript",
+      "version": "5.9.3"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/typescript-eslint@8.65.0",
+      "lockfile": "web/package-lock.json",
+      "name": "typescript-eslint",
+      "package_path": "node_modules/typescript-eslint",
+      "version": "8.65.0"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/undici-types@7.16.0",
+      "lockfile": "web/package-lock.json",
+      "name": "undici-types",
+      "package_path": "node_modules/undici-types",
+      "version": "7.16.0"
+    },
+    {
+      "declared_license": "BSD-2-Clause",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/uri-js@4.4.1",
+      "lockfile": "web/package-lock.json",
+      "name": "uri-js",
+      "package_path": "node_modules/uri-js",
+      "version": "4.4.1"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/vite@8.1.5",
+      "lockfile": "web/package-lock.json",
+      "name": "vite",
+      "package_path": "node_modules/vite",
+      "version": "8.1.5"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/fsevents@2.3.3",
+      "lockfile": "web/package-lock.json",
+      "name": "fsevents",
+      "package_path": "node_modules/vite/node_modules/fsevents",
+      "version": "2.3.3"
+    },
+    {
+      "declared_license": "ISC",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/which@2.0.2",
+      "lockfile": "web/package-lock.json",
+      "name": "which",
+      "package_path": "node_modules/which",
+      "version": "2.0.2"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/word-wrap@1.2.5",
+      "lockfile": "web/package-lock.json",
+      "name": "word-wrap",
+      "package_path": "node_modules/word-wrap",
+      "version": "1.2.5"
+    },
+    {
+      "declared_license": "MIT",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/yocto-queue@0.1.0",
+      "lockfile": "web/package-lock.json",
+      "name": "yocto-queue",
+      "package_path": "node_modules/yocto-queue",
+      "version": "0.1.0"
+    },
+    {
+      "declared_license": "BSD-3-Clause",
+      "ecosystem": "npm",
+      "license_status": "declared",
+      "locator": "pkg:npm/zrender@6.1.0",
+      "lockfile": "web/package-lock.json",
+      "name": "zrender",
+      "package_path": "node_modules/zrender",
+      "version": "6.1.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/accelerate@1.14.0",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "accelerate",
+      "version": "1.14.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/aiohappyeyeballs@2.7.1",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "aiohappyeyeballs",
+      "version": "2.7.1"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/aiohttp@3.14.2",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "aiohttp",
+      "version": "3.14.2"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/aiosignal@1.4.0",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "aiosignal",
+      "version": "1.4.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/annotated-doc@0.0.4",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "annotated-doc",
+      "version": "0.0.4"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/annotated-types@0.7.0",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "annotated-types",
+      "version": "0.7.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/anyio@4.14.2",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "anyio",
+      "version": "4.14.2"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/apache-tvm-ffi@0.1.12",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "apache-tvm-ffi",
+      "version": "0.1.12"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/attrs@26.1.0",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "attrs",
+      "version": "26.1.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/certifi@2026.7.22",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "certifi",
+      "version": "2026.7.22"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/charset-normalizer@3.4.9",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "charset-normalizer",
+      "version": "3.4.9"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/click@8.4.2",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "click",
+      "version": "8.4.2"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/colorama@0.4.6",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "colorama",
+      "version": "0.4.6"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/cuda-bindings@13.3.1",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "cuda-bindings",
+      "version": "13.3.1"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/cuda-pathfinder@1.6.0",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "cuda-pathfinder",
+      "version": "1.6.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/cuda-toolkit@13.0.2",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "cuda-toolkit",
+      "version": "13.0.2"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/datasets@5.0.0",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "datasets",
+      "version": "5.0.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/dill@0.4.1",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "dill",
+      "version": "0.4.1"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/filelock@3.32.0",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "filelock",
+      "version": "3.32.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/frozenlist@1.8.0",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "frozenlist",
+      "version": "1.8.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/fsspec@2026.4.0",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "fsspec",
+      "version": "2026.4.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/h11@0.16.0",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "h11",
+      "version": "0.16.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/hf-xet@1.5.2",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "hf-xet",
+      "version": "1.5.2"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/httpcore@1.0.9",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "httpcore",
+      "version": "1.0.9"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/httpx@0.28.1",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "httpx",
+      "version": "0.28.1"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/huggingface-hub@1.24.0",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "huggingface-hub",
+      "version": "1.24.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/idna@3.18",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "idna",
+      "version": "3.18"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/jinja2@3.1.6",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "jinja2",
+      "version": "3.1.6"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/joblib@1.5.3",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "joblib",
+      "version": "1.5.3"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/json-repair@0.61.7",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "json-repair",
+      "version": "0.61.7"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/markdown-it-py@4.2.0",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "markdown-it-py",
+      "version": "4.2.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/markupsafe@3.0.3",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "markupsafe",
+      "version": "3.0.3"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/mdurl@0.1.2",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "mdurl",
+      "version": "0.1.2"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/mostlyai-engine@2.6.2",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "mostlyai-engine",
+      "version": "2.6.2"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/mpmath@1.3.0",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "mpmath",
+      "version": "1.3.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/multidict@6.7.1",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "multidict",
+      "version": "6.7.1"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/multiprocess@0.70.19",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "multiprocess",
+      "version": "0.70.19"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/narwhals@2.24.0",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "narwhals",
+      "version": "2.24.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/networkx@3.6.1",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "networkx",
+      "version": "3.6.1"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/numpy@2.4.6",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "numpy",
+      "version": "2.4.6"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/nvidia-cublas@13.1.0.3",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "nvidia-cublas",
+      "version": "13.1.0.3"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/nvidia-cuda-cupti@13.0.85",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "nvidia-cuda-cupti",
+      "version": "13.0.85"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/nvidia-cuda-nvrtc@13.0.88",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "nvidia-cuda-nvrtc",
+      "version": "13.0.88"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/nvidia-cuda-runtime@13.0.96",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "nvidia-cuda-runtime",
+      "version": "13.0.96"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/nvidia-cudnn-cu13@9.19.0.56",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "nvidia-cudnn-cu13",
+      "version": "9.19.0.56"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/nvidia-cufft@12.0.0.61",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "nvidia-cufft",
+      "version": "12.0.0.61"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/nvidia-cufile@1.15.1.6",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "nvidia-cufile",
+      "version": "1.15.1.6"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/nvidia-curand@10.4.0.35",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "nvidia-curand",
+      "version": "10.4.0.35"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/nvidia-cusolver@12.0.4.66",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "nvidia-cusolver",
+      "version": "12.0.4.66"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/nvidia-cusparse@12.6.3.3",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "nvidia-cusparse",
+      "version": "12.6.3.3"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/nvidia-cusparselt-cu13@0.8.0",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "nvidia-cusparselt-cu13",
+      "version": "0.8.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/nvidia-nccl-cu13@2.28.9",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "nvidia-nccl-cu13",
+      "version": "2.28.9"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/nvidia-nvjitlink@13.0.88",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "nvidia-nvjitlink",
+      "version": "13.0.88"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/nvidia-nvshmem-cu13@3.4.5",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "nvidia-nvshmem-cu13",
+      "version": "3.4.5"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/nvidia-nvtx@13.0.85",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "nvidia-nvtx",
+      "version": "13.0.85"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/opacus@1.6.0",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "opacus",
+      "version": "1.6.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/opt-einsum@3.4.0",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "opt-einsum",
+      "version": "3.4.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/packaging@26.2",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "packaging",
+      "version": "26.2"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/pandas@3.0.3",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "pandas",
+      "version": "3.0.3"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/peft@0.19.1",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "peft",
+      "version": "0.19.1"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/pillow@12.3.0",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "pillow",
+      "version": "12.3.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/propcache@0.5.2",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "propcache",
+      "version": "0.5.2"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/psutil@5.9.8",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "psutil",
+      "version": "5.9.8"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/pyarrow@25.0.0",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "pyarrow",
+      "version": "25.0.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/pydantic@2.13.4",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "pydantic",
+      "version": "2.13.4"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/pydantic-core@2.46.4",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "pydantic-core",
+      "version": "2.46.4"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/pygments@2.20.0",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "pygments",
+      "version": "2.20.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/python-dateutil@2.9.0.post0",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "python-dateutil",
+      "version": "2.9.0.post0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/pyyaml@6.0.3",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "pyyaml",
+      "version": "6.0.3"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/regex@2026.7.19",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "regex",
+      "version": "2026.7.19"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/requests@2.34.2",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "requests",
+      "version": "2.34.2"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/rich@15.0.0",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "rich",
+      "version": "15.0.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/safetensors@0.8.0",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "safetensors",
+      "version": "0.8.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/scikit-learn@1.9.0",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "scikit-learn",
+      "version": "1.9.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/scipy@1.17.1",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "scipy",
+      "version": "1.17.1"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/setuptools@80.10.2",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "setuptools",
+      "version": "80.10.2"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/shellingham@1.5.4",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "shellingham",
+      "version": "1.5.4"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/six@1.17.0",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "six",
+      "version": "1.17.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/sts-argn-worker@0.1.0",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "sts-argn-worker",
+      "version": "0.1.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/sympy@1.14.0",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "sympy",
+      "version": "1.14.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/threadpoolctl@3.6.0",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "threadpoolctl",
+      "version": "3.6.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/tokenizers@0.22.2",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "tokenizers",
+      "version": "0.22.2"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/torch@2.11.0",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "torch",
+      "version": "2.11.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/torchaudio@2.11.0",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "torchaudio",
+      "version": "2.11.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/torchvision@0.26.0",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "torchvision",
+      "version": "0.26.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/tqdm@4.69.0",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "tqdm",
+      "version": "4.69.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/transformers@5.14.1",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "transformers",
+      "version": "5.14.1"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/triton@3.6.0",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "triton",
+      "version": "3.6.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/typer@0.27.0",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "typer",
+      "version": "0.27.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/typing-extensions@4.16.0",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "typing-extensions",
+      "version": "4.16.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/typing-inspection@0.4.2",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "typing-inspection",
+      "version": "0.4.2"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/tzdata@2026.3",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "tzdata",
+      "version": "2026.3"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/urllib3@2.7.0",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "urllib3",
+      "version": "2.7.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/xgrammar@0.2.3",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "xgrammar",
+      "version": "0.2.3"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/xxhash@3.8.1",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "xxhash",
+      "version": "3.8.1"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/yarl@1.24.5",
+      "lockfile": "workers/argn/uv.lock",
+      "name": "yarl",
+      "version": "1.24.5"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/colorama@0.4.6",
+      "lockfile": "workers/dpmm/uv.lock",
+      "name": "colorama",
+      "version": "0.4.6"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/deprecated@1.3.1",
+      "lockfile": "workers/dpmm/uv.lock",
+      "name": "deprecated",
+      "version": "1.3.1"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/disjoint-set@0.7.4",
+      "lockfile": "workers/dpmm/uv.lock",
+      "name": "disjoint-set",
+      "version": "0.7.4"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/dpmm@0.1.9",
+      "lockfile": "workers/dpmm/uv.lock",
+      "name": "dpmm",
+      "version": "0.1.9"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/joblib@1.5.3",
+      "lockfile": "workers/dpmm/uv.lock",
+      "name": "joblib",
+      "version": "1.5.3"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/networkx@2.8.8",
+      "lockfile": "workers/dpmm/uv.lock",
+      "name": "networkx",
+      "version": "2.8.8"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/numpy@1.26.4",
+      "lockfile": "workers/dpmm/uv.lock",
+      "name": "numpy",
+      "version": "1.26.4"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/opendp@0.12.1",
+      "lockfile": "workers/dpmm/uv.lock",
+      "name": "opendp",
+      "version": "0.12.1"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/pandas@2.1.0",
+      "lockfile": "workers/dpmm/uv.lock",
+      "name": "pandas",
+      "version": "2.1.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/python-dateutil@2.9.0.post0",
+      "lockfile": "workers/dpmm/uv.lock",
+      "name": "python-dateutil",
+      "version": "2.9.0.post0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/pytz@2026.2",
+      "lockfile": "workers/dpmm/uv.lock",
+      "name": "pytz",
+      "version": "2026.2"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/scikit-learn@1.5.0",
+      "lockfile": "workers/dpmm/uv.lock",
+      "name": "scikit-learn",
+      "version": "1.5.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/scipy@1.17.1",
+      "lockfile": "workers/dpmm/uv.lock",
+      "name": "scipy",
+      "version": "1.17.1"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/six@1.17.0",
+      "lockfile": "workers/dpmm/uv.lock",
+      "name": "six",
+      "version": "1.17.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/sts-dpmm-worker@0.1.0",
+      "lockfile": "workers/dpmm/uv.lock",
+      "name": "sts-dpmm-worker",
+      "version": "0.1.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/threadpoolctl@3.6.0",
+      "lockfile": "workers/dpmm/uv.lock",
+      "name": "threadpoolctl",
+      "version": "3.6.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/tqdm@4.69.0",
+      "lockfile": "workers/dpmm/uv.lock",
+      "name": "tqdm",
+      "version": "4.69.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/tzdata@2026.3",
+      "lockfile": "workers/dpmm/uv.lock",
+      "name": "tzdata",
+      "version": "2026.3"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/wrapt@2.2.2",
+      "lockfile": "workers/dpmm/uv.lock",
+      "name": "wrapt",
+      "version": "2.2.2"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/colorama@0.4.6",
+      "lockfile": "workers/eval/uv.lock",
+      "name": "colorama",
+      "version": "0.4.6"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/iniconfig@2.3.0",
+      "lockfile": "workers/eval/uv.lock",
+      "name": "iniconfig",
+      "version": "2.3.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/joblib@1.5.3",
+      "lockfile": "workers/eval/uv.lock",
+      "name": "joblib",
+      "version": "1.5.3"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/numpy@2.3.5",
+      "lockfile": "workers/eval/uv.lock",
+      "name": "numpy",
+      "version": "2.3.5"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/packaging@26.2",
+      "lockfile": "workers/eval/uv.lock",
+      "name": "packaging",
+      "version": "26.2"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/pluggy@1.6.0",
+      "lockfile": "workers/eval/uv.lock",
+      "name": "pluggy",
+      "version": "1.6.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/pygments@2.20.0",
+      "lockfile": "workers/eval/uv.lock",
+      "name": "pygments",
+      "version": "2.20.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/pytest@9.0.2",
+      "lockfile": "workers/eval/uv.lock",
+      "name": "pytest",
+      "version": "9.0.2"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/ruff@0.15.6",
+      "lockfile": "workers/eval/uv.lock",
+      "name": "ruff",
+      "version": "0.15.6"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/scikit-learn@1.8.0",
+      "lockfile": "workers/eval/uv.lock",
+      "name": "scikit-learn",
+      "version": "1.8.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/scipy@1.17.1",
+      "lockfile": "workers/eval/uv.lock",
+      "name": "scipy",
+      "version": "1.17.1"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/synthetic-table-studio-eval-worker@0.1.0",
+      "lockfile": "workers/eval/uv.lock",
+      "name": "synthetic-table-studio-eval-worker",
+      "version": "0.1.0"
+    },
+    {
+      "declared_license": null,
+      "ecosystem": "python-uv",
+      "license_status": "not_recorded_in_uv_lock",
+      "locator": "pkg:pypi/threadpoolctl@3.6.0",
+      "lockfile": "workers/eval/uv.lock",
+      "name": "threadpoolctl",
+      "version": "3.6.0"
+    }
+  ],
+  "schema_version": "1.0",
+  "source_of_truth": "repository lockfiles"
+}

@@ -1,0 +1,2432 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import contextlib
+import hashlib
+import html
+import json
+import os
+import platform
+import re
+import shutil
+import subprocess
+import sys
+import threading
+import uuid
+import zipfile
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any, Callable, Iterable, Sequence
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+APP_PYTHON = PROJECT_ROOT / "app" / ".venv" / "bin" / "python"
+if APP_PYTHON.is_file() and os.environ.get("STS_VERIFY_VENV") != "1":
+    environment = {**os.environ, "STS_VERIFY_VENV": "1"}
+    os.execve(
+        APP_PYTHON,
+        [str(APP_PYTHON), str(Path(__file__).resolve()), *sys.argv[1:]],
+        environment,
+    )
+
+APP_SOURCE = PROJECT_ROOT / "app" / "src"
+if str(APP_SOURCE) not in sys.path:
+    sys.path.insert(0, str(APP_SOURCE))
+
+import duckdb  # noqa: E402
+import psutil  # noqa: E402
+
+EXPECTED_SAMPLE_SHA256 = (
+    "a268757667274304004d201726053d642c16b8ee5332a7045b2ae713aa7d9dd3"
+)
+EXPECTED_SAMPLE_SIZE = 75_985_288
+EXPECTED_SAMPLE_ROWS = 989_502
+EXPECTED_SAMPLE_COLUMNS = 21
+ARGN_WHEEL_SHA256 = "3ead3770c936919f8fce4e1f9fffd271ffdd490f0292c2ab9a42cb4bafe3caea"
+RESULT_SCHEMA_VERSION = "1.0"
+CANONICALIZATION_VERSION = "sts-verifier-json-row-sha256-v1"
+_HEX_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_MEMORY_LIMIT = re.compile(r"^[1-9][0-9]*(?:KB|MB|GB|KiB|MiB|GiB)$", re.IGNORECASE)
+
+
+class VerificationFailure(RuntimeError):
+    pass
+
+
+class ResourceMonitor:
+    def __init__(self, *, interval_seconds: float = 0.02) -> None:
+        self.interval_seconds = interval_seconds
+        self.peak_rss_bytes = 0
+        self._stop = threading.Event()
+        self._thread = threading.Thread(
+            target=self._run, name="sts-rss-monitor", daemon=True
+        )
+
+    def __enter__(self) -> ResourceMonitor:
+        self._sample()
+        self._thread.start()
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self._stop.set()
+        self._thread.join(timeout=2)
+        self._sample()
+
+    def _sample(self) -> None:
+        with contextlib.suppress(psutil.Error):
+            process = psutil.Process()
+            rss = process.memory_info().rss
+            for child in process.children(recursive=True):
+                with contextlib.suppress(psutil.Error):
+                    rss += child.memory_info().rss
+            self.peak_rss_bytes = max(self.peak_rss_bytes, rss)
+
+    def _run(self) -> None:
+        while not self._stop.wait(self.interval_seconds):
+            self._sample()
+
+
+class DirectorySizeMonitor:
+    def __init__(self, path: Path, *, interval_seconds: float = 0.005) -> None:
+        self.path = path
+        self.interval_seconds = interval_seconds
+        self.peak_bytes = 0
+        self.peak_files = 0
+        self._stop = threading.Event()
+        self._thread = threading.Thread(
+            target=self._run, name="sts-spill-monitor", daemon=True
+        )
+
+    def __enter__(self) -> DirectorySizeMonitor:
+        self._sample()
+        self._thread.start()
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self._stop.set()
+        self._thread.join(timeout=2)
+        self._sample()
+
+    def _sample(self) -> None:
+        total = 0
+        files = 0
+        if self.path.exists():
+            for root, _, names in os.walk(self.path):
+                for name in names:
+                    candidate = Path(root) / name
+                    with contextlib.suppress(OSError):
+                        total += candidate.stat().st_size
+                        files += 1
+        self.peak_bytes = max(self.peak_bytes, total)
+        self.peak_files = max(self.peak_files, files)
+
+    def _run(self) -> None:
+        while not self._stop.wait(self.interval_seconds):
+            self._sample()
+
+
+def utc_now() -> str:
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+
+def canonical_json_bytes(value: object) -> bytes:
+    return json.dumps(
+        value,
+        allow_nan=False,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def artifact(
+    kind: str, path: Path, *, root: Path, **metadata: object
+) -> dict[str, object]:
+    result: dict[str, object] = {
+        "kind": kind,
+        "path": path.relative_to(root).as_posix(),
+        "size_bytes": path.stat().st_size,
+        "sha256": sha256_file(path),
+    }
+    result.update(metadata)
+    return result
+
+
+def fsync_directory(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def write_atomic(path: Path, data: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    part = path.with_name(f".{path.name}.part-{uuid.uuid4().hex}")
+    try:
+        with part.open("xb") as target:
+            target.write(data)
+            target.flush()
+            os.fsync(target.fileno())
+        os.replace(part, path)
+        fsync_directory(path.parent)
+    finally:
+        part.unlink(missing_ok=True)
+
+
+def copy_query_atomic(
+    connection: duckdb.DuckDBPyConnection,
+    query: str,
+    parameters: Sequence[object],
+    destination: Path,
+    *,
+    format_clause: str,
+) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    part = destination.with_name(f".{destination.name}.part-{uuid.uuid4().hex}")
+    try:
+        connection.execute(
+            f"COPY ({query}) TO {sql_string(str(part))} ({format_clause})",
+            list(parameters),
+        )
+        with part.open("rb") as published:
+            os.fsync(published.fileno())
+        os.replace(part, destination)
+        fsync_directory(destination.parent)
+    finally:
+        part.unlink(missing_ok=True)
+
+
+def quote_identifier(value: str) -> str:
+    return '"' + value.replace('"', '""') + '"'
+
+
+def sql_string(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def configure_duckdb(
+    connection: duckdb.DuckDBPyConnection,
+    *,
+    memory_limit: str,
+    temp_directory: Path,
+    force_external: bool = False,
+) -> None:
+    if not _MEMORY_LIMIT.fullmatch(memory_limit):
+        raise VerificationFailure(f"invalid DuckDB memory limit: {memory_limit!r}")
+    temp_directory.mkdir(parents=True, exist_ok=True)
+    connection.execute(f"SET memory_limit={sql_string(memory_limit)}")
+    connection.execute(f"SET temp_directory={sql_string(str(temp_directory))}")
+    connection.execute("SET threads=2")
+    connection.execute("SET preserve_insertion_order=false")
+    if force_external:
+        available = connection.execute(
+            "SELECT count(*) FROM duckdb_settings() WHERE name='debug_force_external'"
+        ).fetchone()[0]
+        if available != 1:
+            raise VerificationFailure(
+                "DuckDB debug_force_external setting is unavailable"
+            )
+        connection.execute("SET debug_force_external=true")
+
+
+def add_gate(
+    result: dict[str, Any],
+    name: str,
+    passed: bool,
+    *,
+    observed: object = None,
+    expected: object = None,
+    message: str | None = None,
+) -> None:
+    gate = {
+        "name": name,
+        "status": "passed" if passed else "failed",
+        "observed": observed,
+        "expected": expected,
+    }
+    if message is not None and not passed:
+        gate["message"] = message
+    result["gates"].append(gate)
+    if not passed:
+        raise VerificationFailure(message or f"gate failed: {name}")
+
+
+def unavailable_engine_benchmark(
+    argn: dict[str, object] | None = None,
+) -> dict[str, object]:
+    return {
+        "status": "unavailable",
+        "reason_code": "PINNED_COMPARATIVE_ENGINES_UNAVAILABLE",
+        "implementations": {
+            "argn": argn
+            or {
+                "status": "unavailable",
+                "pinned": False,
+                "reason_code": "ARGN_RUNTIME_NOT_VERIFIED",
+            },
+            "forestflow": {
+                "status": "unavailable",
+                "pinned": False,
+                "reason_code": "PINNED_IMPLEMENTATION_NOT_PRESENT",
+            },
+            "arf": {
+                "status": "unavailable",
+                "pinned": False,
+                "reason_code": "PINNED_IMPLEMENTATION_NOT_PRESENT",
+            },
+        },
+        "noninferiority": {
+            "status": "not_evaluated",
+            "passed": None,
+            "reason_code": "THREE_ENGINE_THREE_SEED_RESULTS_UNAVAILABLE",
+            "metrics": None,
+        },
+    }
+
+
+def base_result(target: str, configuration: dict[str, object]) -> dict[str, Any]:
+    return {
+        "schema_version": RESULT_SCHEMA_VERSION,
+        "capacity_estimator_version": 1,
+        "verification": target,
+        "status": "running",
+        "started_at": utc_now(),
+        "completed_at": None,
+        "configuration": configuration,
+        "host": {
+            "platform": platform.platform(),
+            "machine": platform.machine(),
+            "python": platform.python_version(),
+            "duckdb": duckdb.__version__,
+        },
+        "gates": [],
+        "resources": {},
+        "artifacts": [],
+        "engine_benchmark": unavailable_engine_benchmark(),
+        "error": None,
+    }
+
+
+def ensure_no_parts(root: Path) -> list[str]:
+    return sorted(
+        path.relative_to(root).as_posix()
+        for path in root.rglob("*")
+        if path.is_file() and (".part" in path.name or path.suffix == ".part")
+    )
+
+
+def create_zip64_store(destination: Path, files: Iterable[tuple[Path, str]]) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    part = destination.with_name(f".{destination.name}.part-{uuid.uuid4().hex}")
+    try:
+        with zipfile.ZipFile(
+            part, mode="x", compression=zipfile.ZIP_STORED, allowZip64=True
+        ) as archive:
+            for source, archive_name in files:
+                if source.is_symlink() or not source.is_file():
+                    raise VerificationFailure(
+                        f"ZIP input is not a regular file: {source}"
+                    )
+                info = zipfile.ZipInfo(archive_name, date_time=(1980, 1, 1, 0, 0, 0))
+                info.compress_type = zipfile.ZIP_STORED
+                info.create_system = 3
+                info.external_attr = 0o600 << 16
+                info.file_size = source.stat().st_size
+                with (
+                    source.open("rb") as input_file,
+                    archive.open(info, mode="w", force_zip64=True) as output,
+                ):
+                    shutil.copyfileobj(input_file, output, length=1024 * 1024)
+        with part.open("rb") as published:
+            os.fsync(published.fileno())
+        os.replace(part, destination)
+        fsync_directory(destination.parent)
+    finally:
+        part.unlink(missing_ok=True)
+
+
+def relation_content_hash(
+    connection: duckdb.DuckDBPyConnection,
+    relation_sql: str,
+    parameters: Sequence[object],
+    columns: Sequence[str],
+    *,
+    order_column: str,
+) -> tuple[int, str]:
+    fields = ",".join(
+        f"{quote_identifier(column)} := {quote_identifier(column)}"
+        for column in columns
+    )
+    query = (
+        f"SELECT sha256(to_json(struct_pack({fields}))) AS row_digest "
+        f"FROM ({relation_sql}) AS content ORDER BY {quote_identifier(order_column)}"
+    )
+    cursor = connection.execute(query, list(parameters))
+    digest = hashlib.sha256()
+    rows = 0
+    while batch := cursor.fetchmany(8192):
+        for (row_digest,) in batch:
+            if not isinstance(row_digest, str) or not _HEX_SHA256.fullmatch(row_digest):
+                raise VerificationFailure(
+                    "DuckDB returned an invalid canonical row digest"
+                )
+            digest.update(bytes.fromhex(row_digest))
+        rows += len(batch)
+    return rows, digest.hexdigest()
+
+
+def report_asset_count(path: Path) -> int:
+    payload = path.read_text(encoding="utf-8").lower()
+    patterns = ("http://", "https://", "<script", "<link", "@import", "url(")
+    return sum(payload.count(pattern) for pattern in patterns)
+
+
+def persist_result(result: dict[str, Any], results_dir: Path) -> Path:
+    target = results_dir / f"{result['verification']}.json"
+    write_atomic(target, canonical_json_bytes(result) + b"\n")
+    return target
+
+
+def schema_signature(columns: Sequence[str]) -> str:
+    return hashlib.sha256(canonical_json_bytes(list(columns))).hexdigest()
+
+
+SCALE_COLUMNS = (
+    ["record_id"]
+    + [f"category_{index:02d}" for index in range(10)]
+    + [f"integer_{index:02d}" for index in range(20)]
+    + [f"float_{index:02d}" for index in range(10)]
+    + [f"boolean_{index:02d}" for index in range(5)]
+    + [f"date_{index:02d}" for index in range(5)]
+    + [f"datetime_{index:02d}" for index in range(5)]
+    + [f"text_{index:02d}" for index in range(10)]
+    + ["employee_m", "employee_f", "employee_total", "status"]
+)
+assert len(SCALE_COLUMNS) == 70
+
+
+def scale_fixture_projection() -> str:
+    expressions = ["i::BIGINT AS record_id"]
+    expressions.extend(
+        f"printf('cat_%02d', ((i + {index}) % 17)::INTEGER) AS category_{index:02d}"
+        for index in range(10)
+    )
+    expressions.append(
+        "CASE WHEN i % 2 = 0 THEN ((i * 17) % 10000)::BIGINT ELSE 0::BIGINT END "
+        "AS integer_00"
+    )
+    expressions.extend(
+        f"((i * {index + 3} + {index}) % 100000)::BIGINT AS integer_{index:02d}"
+        for index in range(1, 20)
+    )
+    expressions.extend(
+        f"round(((i + {index}) % 10000)::DOUBLE / {index + 3}, 6) AS float_{index:02d}"
+        for index in range(10)
+    )
+    expressions.extend(
+        f"((i + {index}) % 2 = 0) AS boolean_{index:02d}" for index in range(5)
+    )
+    expressions.extend(
+        f"DATE '2020-01-01' + ((i + {index}) % 2191)::INTEGER AS date_{index:02d}"
+        for index in range(5)
+    )
+    expressions.extend(
+        "TIMESTAMP '2020-01-01 00:00:00' + "
+        f"((i * 37 + {index}) % 31536000) * INTERVAL 1 SECOND AS datetime_{index:02d}"
+        for index in range(5)
+    )
+    expressions.extend(
+        f"printf('txt%02d_%08d', {index}, (i % 100000000)::INTEGER) AS text_{index:02d}"
+        for index in range(10)
+    )
+    expressions.extend(
+        [
+            "(i % 101)::BIGINT AS employee_m",
+            "((i * 3) % 97)::BIGINT AS employee_f",
+            "((i % 101) + ((i * 3) % 97))::BIGINT AS employee_total",
+            "CASE WHEN i % 2 = 0 THEN 'active' ELSE 'inactive' END AS status",
+        ]
+    )
+    if len(expressions) != 70:
+        raise AssertionError("scale fixture projection must contain exactly 70 columns")
+    return ",\n".join(expressions)
+
+
+def scale_rule_violations(
+    connection: duckdb.DuckDBPyConnection, paths: Sequence[Path]
+) -> dict[str, int]:
+    source = "read_parquet(?)"
+    path_values = [str(path) for path in paths]
+    query = f"""
+        SELECT
+          count(*) FILTER (WHERE record_id IS NULL) AS record_not_null,
+          count(*) FILTER (WHERE status NOT IN ('active', 'inactive') OR status IS NULL)
+            AS status_allowed,
+          count(*) FILTER (WHERE integer_00 < 0 OR integer_00 > 9999 OR integer_00 IS NULL)
+            AS integer_range,
+          count(*) FILTER (
+            WHERE employee_total IS NULL OR employee_m IS NULL OR employee_f IS NULL
+               OR employee_total <> employee_m + employee_f
+          ) AS employee_sum,
+          count(*) FILTER (
+            WHERE NOT ((boolean_00 AND status = 'active')
+                    OR (NOT boolean_00 AND status = 'inactive'))
+          ) AS fixed_combination,
+          count(*) FILTER (WHERE status = 'inactive' AND integer_00 <> 0)
+            AS conditional_set
+        FROM {source}
+    """
+    values = connection.execute(query, [path_values]).fetchone()
+    names = (
+        "record_not_null",
+        "status_allowed",
+        "integer_range",
+        "employee_sum",
+        "fixed_combination",
+        "conditional_set",
+    )
+    return dict(zip(names, (int(value) for value in values), strict=True))
+
+
+def _write_report(
+    workspace: Path,
+    *,
+    title: str,
+    summary: dict[str, object],
+) -> tuple[Path, Path]:
+    report_dir = workspace / "reports"
+    report_json = report_dir / "primary-report.json"
+    write_atomic(report_json, canonical_json_bytes(summary) + b"\n")
+    rows = "".join(
+        f"<tr><th>{html.escape(str(key))}</th><td>{html.escape(str(value))}</td></tr>"
+        for key, value in summary.items()
+    )
+    document = (
+        '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+        f"<title>{html.escape(title)}</title>"
+        "<style>body{font-family:system-ui;margin:2rem;color:#111}"
+        "table{border-collapse:collapse}th,td{border:1px solid #777;padding:.4rem;text-align:left}"
+        "</style></head><body>"
+        f"<h1>{html.escape(title)}</h1><table>{rows}</table></body></html>"
+    )
+    report_html = report_dir / "primary-report.html"
+    write_atomic(report_html, document.encode("utf-8"))
+    return report_json, report_html
+
+
+def run_scale(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
+    if args.rows < 1 or args.batch_rows < 1:
+        raise SystemExit("--rows and --batch-rows must be positive")
+    if args.columns != 70:
+        raise SystemExit("scale-m4 fixture is fixed at exactly 70 user columns")
+    if args.rss_limit_bytes < 1:
+        raise SystemExit("--rss-limit-bytes must be positive")
+    spill_memory_limit = args.spill_memory_limit or args.memory_limit
+    if not _MEMORY_LIMIT.fullmatch(spill_memory_limit):
+        raise SystemExit(
+            "--spill-memory-limit must be an integer size such as 32MB or 1GB"
+        )
+
+    run_id = uuid.uuid4().hex
+    workspace = (
+        args.workspace or PROJECT_ROOT / "var" / "verify" / "scale-m4" / run_id
+    ).resolve()
+    workspace.mkdir(parents=True, exist_ok=False)
+    configuration = {
+        "rows": args.rows,
+        "columns": args.columns,
+        "batch_rows": args.batch_rows,
+        "duckdb_memory_limit": args.memory_limit,
+        "spill_probe_memory_limit": spill_memory_limit,
+        "rss_limit_bytes": args.rss_limit_bytes,
+        "spill_required": not args.allow_zero_spill,
+        "workspace": str(workspace),
+        "reduced_smoke": args.rows != 2_000_000,
+    }
+    result = base_result("scale-m4", configuration)
+    result["engine_benchmark"] = unavailable_engine_benchmark(
+        {
+            "status": "unavailable",
+            "pinned": True,
+            "reason_code": "LIGHTWEIGHT_ADAPTER_IS_NOT_ARGN",
+            "distribution": "mostlyai-engine",
+            "version": "2.6.2",
+            "wheel_sha256": ARGN_WHEEL_SHA256,
+        }
+    )
+    raw_dir = workspace / "raw"
+    normalized_dir = workspace / "normalized"
+    synthetic_dir = workspace / "synthetic"
+    spill_dir = workspace / "duckdb-spill"
+    raw_dir.mkdir()
+    normalized_dir.mkdir()
+    synthetic_dir.mkdir()
+    connection = duckdb.connect()
+    exit_code = 1
+    spill_peak = 0
+
+    try:
+        configure_duckdb(
+            connection,
+            memory_limit=args.memory_limit,
+            temp_directory=spill_dir,
+            force_external=False,
+        )
+        with ResourceMonitor() as resources:
+            raw_paths: list[Path] = []
+            for shard_index, start in enumerate(range(0, args.rows, args.batch_rows)):
+                stop = min(args.rows, start + args.batch_rows)
+                destination = raw_dir / f"part-{shard_index:05d}.parquet"
+                query = (
+                    f"SELECT {scale_fixture_projection()} "
+                    "FROM range(?, ?) AS fixture(i)"
+                )
+                copy_query_atomic(
+                    connection,
+                    query,
+                    [start, stop],
+                    destination,
+                    format_clause="FORMAT PARQUET, COMPRESSION ZSTD",
+                )
+                raw_paths.append(destination)
+
+            raw_rows = int(
+                connection.execute(
+                    "SELECT count(*) FROM read_parquet(?)",
+                    [[str(p) for p in raw_paths]],
+                ).fetchone()[0]
+            )
+            described = connection.execute(
+                "DESCRIBE SELECT * FROM read_parquet(?)", [[str(p) for p in raw_paths]]
+            ).fetchall()
+            raw_columns = [str(row[0]) for row in described]
+            add_gate(
+                result,
+                "fixture_rows",
+                raw_rows == args.rows,
+                observed=raw_rows,
+                expected=args.rows,
+            )
+            add_gate(
+                result,
+                "fixture_columns",
+                raw_columns == SCALE_COLUMNS,
+                observed=raw_columns,
+                expected=SCALE_COLUMNS,
+            )
+
+            normalized_paths: list[Path] = []
+            quoted = ",".join(quote_identifier(column) for column in SCALE_COLUMNS)
+            for shard_index, raw_path in enumerate(raw_paths):
+                destination = normalized_dir / f"part-{shard_index:05d}.parquet"
+                copy_query_atomic(
+                    connection,
+                    f"SELECT record_id AS __sts_row_id, {quoted} FROM read_parquet(?)",
+                    [str(raw_path)],
+                    destination,
+                    format_clause="FORMAT PARQUET, COMPRESSION ZSTD",
+                )
+                normalized_paths.append(destination)
+            normalized_rows = int(
+                connection.execute(
+                    "SELECT count(*) FROM read_parquet(?)",
+                    [[str(p) for p in normalized_paths]],
+                ).fetchone()[0]
+            )
+            add_gate(
+                result,
+                "normalization_rows",
+                normalized_rows == args.rows,
+                observed=normalized_rows,
+                expected=args.rows,
+            )
+            source_violations = scale_rule_violations(connection, normalized_paths)
+            add_gate(
+                result,
+                "normalized_rules",
+                all(value == 0 for value in source_violations.values()),
+                observed=source_violations,
+                expected={name: 0 for name in source_violations},
+            )
+
+            spill_probe = workspace / "spill-probe.parquet"
+            all_projection = ",".join(
+                [quote_identifier("__sts_row_id")]
+                + [quote_identifier(column) for column in SCALE_COLUMNS]
+            )
+            connection.execute(f"SET memory_limit={sql_string(spill_memory_limit)}")
+            connection.execute("SET debug_force_external=true")
+            with DirectorySizeMonitor(spill_dir) as spill_monitor:
+                copy_query_atomic(
+                    connection,
+                    f"SELECT {all_projection} FROM read_parquet(?) "
+                    "ORDER BY hash(record_id, 11400714819323198485)",
+                    [[str(p) for p in normalized_paths]],
+                    spill_probe,
+                    format_clause="FORMAT PARQUET, COMPRESSION ZSTD",
+                )
+            spill_peak = spill_monitor.peak_bytes
+            spill_probe.unlink()
+            connection.execute("SET debug_force_external=false")
+            connection.execute(f"SET memory_limit={sql_string(args.memory_limit)}")
+            add_gate(
+                result,
+                "duckdb_spill",
+                args.allow_zero_spill or spill_peak > 0,
+                observed={
+                    "peak_bytes": spill_peak,
+                    "peak_files": spill_monitor.peak_files,
+                },
+                expected={"peak_bytes_min": 0 if args.allow_zero_spill else 1},
+                message="DuckDB external operation did not produce observable temp spill",
+            )
+
+            cancelled_dir = workspace / "cancel-resume" / "cancelled-attempt"
+            cancelled_dir.mkdir(parents=True)
+            cancelled_part = cancelled_dir / "part-00000.parquet.part"
+            connection.execute(
+                "COPY (SELECT * FROM read_parquet(?) LIMIT ?) TO "
+                f"{sql_string(str(cancelled_part))} (FORMAT PARQUET, COMPRESSION ZSTD)",
+                [str(normalized_paths[0]), min(args.batch_rows, args.rows)],
+            )
+            cancellation_path = cancelled_dir / "cancel.requested"
+            write_atomic(cancellation_path, b"scale verification cancellation\n")
+            cancelled_part.unlink()
+            cancellation_record = {
+                "job_id": f"scale-cancelled-{run_id}",
+                "status": "cancelled",
+                "published_artifacts": 0,
+                "boundary": "normalized_dataset",
+            }
+            write_atomic(
+                cancelled_dir / "result.json",
+                canonical_json_bytes(cancellation_record) + b"\n",
+            )
+            cancelled_publications = list(cancelled_dir.glob("*.parquet"))
+            add_gate(
+                result,
+                "cancel_no_partial_publish",
+                not cancelled_publications,
+                observed=[path.name for path in cancelled_publications],
+                expected=[],
+            )
+
+            output_projection = []
+            for column in SCALE_COLUMNS:
+                if column == "text_00":
+                    output_projection.append(
+                        "substr(text_00, 1, 3) || repeat('*', greatest(length(text_00) - 3, 0)) "
+                        "AS text_00"
+                    )
+                else:
+                    output_projection.append(quote_identifier(column))
+            synthetic_paths: list[Path] = []
+            for shard_index, normalized_path in enumerate(normalized_paths):
+                destination = synthetic_dir / f"part-{shard_index:05d}.parquet"
+                copy_query_atomic(
+                    connection,
+                    f"SELECT {','.join(output_projection)} FROM read_parquet(?)",
+                    [str(normalized_path)],
+                    destination,
+                    format_clause="FORMAT PARQUET, COMPRESSION ZSTD",
+                )
+                synthetic_paths.append(destination)
+            resume_record = {
+                "job_id": f"scale-resumed-{run_id}",
+                "retry_of": cancellation_record["job_id"],
+                "status": "succeeded",
+                "resumed_from": "normalized_dataset",
+                "output_shards": len(synthetic_paths),
+            }
+            resume_path = workspace / "cancel-resume" / "resume-result.json"
+            write_atomic(
+                resume_path,
+                canonical_json_bytes(resume_record) + b"\n",
+            )
+            add_gate(
+                result,
+                "resume_from_normalized_boundary",
+                resume_record["status"] == "succeeded"
+                and resume_record["retry_of"] == cancellation_record["job_id"]
+                and resume_record["resumed_from"] == "normalized_dataset",
+                observed=resume_record,
+                expected={
+                    "status": "succeeded",
+                    "retry_of": cancellation_record["job_id"],
+                    "resumed_from": "normalized_dataset",
+                },
+            )
+
+            synthetic_rows = int(
+                connection.execute(
+                    "SELECT count(*) FROM read_parquet(?)",
+                    [[str(p) for p in synthetic_paths]],
+                ).fetchone()[0]
+            )
+            output_violations = scale_rule_violations(connection, synthetic_paths)
+            add_gate(
+                result,
+                "synthetic_rows",
+                synthetic_rows == args.rows,
+                observed=synthetic_rows,
+                expected=args.rows,
+            )
+            add_gate(
+                result,
+                "synthetic_rules",
+                all(value == 0 for value in output_violations.values()),
+                observed=output_violations,
+                expected={name: 0 for name in output_violations},
+            )
+
+            sample_rows = min(args.evaluation_rows, args.rows)
+            normalized_list = [str(path) for path in normalized_paths]
+            synthetic_list = [str(path) for path in synthetic_paths]
+            evaluation_query = """
+                WITH real_sample AS (
+                  SELECT integer_01, status FROM read_parquet(?)
+                  ORDER BY hash(record_id, 761) LIMIT ?
+                ), synth_sample AS (
+                  SELECT integer_01, status FROM read_parquet(?)
+                  ORDER BY hash(record_id, 761) LIMIT ?
+                )
+                SELECT
+                  (SELECT count(*) FROM real_sample),
+                  (SELECT count(*) FROM synth_sample),
+                  (SELECT avg(integer_01) FROM real_sample),
+                  (SELECT avg(integer_01) FROM synth_sample),
+                  (SELECT avg((status = 'active')::INTEGER) FROM real_sample),
+                  (SELECT avg((status = 'active')::INTEGER) FROM synth_sample)
+            """
+            evaluated = connection.execute(
+                evaluation_query,
+                [normalized_list, sample_rows, synthetic_list, sample_rows],
+            ).fetchone()
+            evaluation = {
+                "version": "1.0",
+                "sample_seed": 761,
+                "requested_sample_rows": sample_rows,
+                "real_rows": int(evaluated[0]),
+                "synthetic_rows": int(evaluated[1]),
+                "integer_01_mean_absolute_difference": abs(
+                    float(evaluated[2]) - float(evaluated[3])
+                ),
+                "status_active_rate_absolute_difference": abs(
+                    float(evaluated[4]) - float(evaluated[5])
+                ),
+            }
+            evaluation_path = workspace / "evaluation" / "primary.json"
+            write_atomic(evaluation_path, canonical_json_bytes(evaluation) + b"\n")
+            add_gate(
+                result,
+                "evaluation_samples",
+                evaluation["real_rows"] == sample_rows
+                and evaluation["synthetic_rows"] == sample_rows,
+                observed={
+                    "real": evaluation["real_rows"],
+                    "synthetic": evaluation["synthetic_rows"],
+                },
+                expected={"real": sample_rows, "synthetic": sample_rows},
+            )
+
+            csv_path = workspace / "exports" / "synthetic.csv"
+            csv_projection = ",".join(
+                quote_identifier(column) for column in SCALE_COLUMNS
+            )
+            copy_query_atomic(
+                connection,
+                f"SELECT {csv_projection} FROM read_parquet(?) ORDER BY record_id",
+                [synthetic_list],
+                csv_path,
+                format_clause="FORMAT CSV, HEADER true, NULL ''",
+            )
+            parquet_rows, parquet_content_hash = relation_content_hash(
+                connection,
+                "SELECT * FROM read_parquet(?)",
+                [synthetic_list],
+                SCALE_COLUMNS,
+                order_column="record_id",
+            )
+            typed_csv = "read_csv(?, header=true, auto_detect=true)"
+            csv_rows, csv_content_hash = relation_content_hash(
+                connection,
+                f"SELECT {csv_projection} FROM {typed_csv}",
+                [str(csv_path)],
+                SCALE_COLUMNS,
+                order_column="record_id",
+            )
+            add_gate(
+                result,
+                "canonical_content_equivalence",
+                parquet_rows == csv_rows == args.rows
+                and parquet_content_hash == csv_content_hash,
+                observed={
+                    "parquet_rows": parquet_rows,
+                    "csv_rows": csv_rows,
+                    "parquet_sha256": parquet_content_hash,
+                    "csv_sha256": csv_content_hash,
+                    "canonicalization_version": CANONICALIZATION_VERSION,
+                },
+                expected={"rows": args.rows, "hashes_equal": True},
+            )
+
+            manifest_payload = {
+                "version": "1.0",
+                "rows": args.rows,
+                "columns": SCALE_COLUMNS,
+                "schema_sha256": schema_signature(SCALE_COLUMNS),
+                "canonicalization_version": CANONICALIZATION_VERSION,
+                "canonical_content_sha256": parquet_content_hash,
+                "shards": [
+                    {
+                        "path": path.relative_to(workspace).as_posix(),
+                        "size_bytes": path.stat().st_size,
+                        "sha256": sha256_file(path),
+                    }
+                    for path in synthetic_paths
+                ],
+            }
+            manifest_path = synthetic_dir / "manifest.json"
+            write_atomic(manifest_path, canonical_json_bytes(manifest_payload) + b"\n")
+            zip_path = workspace / "exports" / "synthetic-parquet.zip"
+            create_zip64_store(
+                zip_path,
+                [
+                    *((path, f"synthetic/{path.name}") for path in synthetic_paths),
+                    (manifest_path, "synthetic/manifest.json"),
+                ],
+            )
+
+            report_json, report_html = _write_report(
+                workspace,
+                title="Synthetic Table Studio scale-m4 verification",
+                summary={
+                    "rows": args.rows,
+                    "columns": args.columns,
+                    "spill_bytes": spill_peak,
+                    "canonical_content_sha256": parquet_content_hash,
+                    "hard_rule_violations": sum(output_violations.values()),
+                    "engine_claim": "lightweight deterministic adapter only",
+                },
+            )
+            asset_count = report_asset_count(report_html)
+            add_gate(
+                result,
+                "report_remote_assets",
+                asset_count == 0,
+                observed=asset_count,
+                expected=0,
+            )
+
+            no_parts = ensure_no_parts(workspace)
+            add_gate(
+                result, "no_partial_files", not no_parts, observed=no_parts, expected=[]
+            )
+            add_gate(
+                result,
+                "rss_limit",
+                resources.peak_rss_bytes < args.rss_limit_bytes,
+                observed=resources.peak_rss_bytes,
+                expected={"less_than": args.rss_limit_bytes},
+            )
+
+            result["resources"] = {
+                "peak_process_tree_rss_bytes": resources.peak_rss_bytes,
+                "rss_limit_bytes": args.rss_limit_bytes,
+                "duckdb_memory_limit": args.memory_limit,
+                "spill_bytes_observed": spill_peak,
+                "spill_required": not args.allow_zero_spill,
+            }
+            result["artifacts"] = [
+                artifact(
+                    "synthetic_parquet_manifest",
+                    manifest_path,
+                    root=workspace,
+                    rows=args.rows,
+                    canonical_content_sha256=parquet_content_hash,
+                ),
+                artifact(
+                    "synthetic_csv",
+                    csv_path,
+                    root=workspace,
+                    rows=args.rows,
+                    canonical_content_sha256=csv_content_hash,
+                ),
+                artifact("synthetic_parquet_zip", zip_path, root=workspace),
+                artifact("primary_report_json", report_json, root=workspace),
+                artifact(
+                    "primary_report_html", report_html, root=workspace, remote_assets=0
+                ),
+                artifact("evaluation_json", evaluation_path, root=workspace),
+                artifact("resume_result_json", resume_path, root=workspace),
+            ]
+            result["status"] = "passed"
+            exit_code = 0
+    except Exception as error:
+        result["status"] = "failed"
+        result["error"] = {
+            "type": type(error).__name__,
+            "message": str(error),
+        }
+        if not any(gate["status"] == "failed" for gate in result["gates"]):
+            result["gates"].append(
+                {
+                    "name": "pipeline_execution",
+                    "status": "failed",
+                    "observed": type(error).__name__,
+                    "expected": "completed",
+                    "message": str(error),
+                }
+            )
+    finally:
+        connection.close()
+        result["completed_at"] = utc_now()
+        if not result["resources"]:
+            result["resources"] = {
+                "peak_process_tree_rss_bytes": locals().get("resources").peak_rss_bytes
+                if "resources" in locals()
+                else 0,
+                "rss_limit_bytes": args.rss_limit_bytes,
+                "duckdb_memory_limit": args.memory_limit,
+                "spill_bytes_observed": spill_peak,
+                "spill_required": not args.allow_zero_spill,
+            }
+        persist_result(result, args.results_dir)
+    return result, exit_code
+
+
+SAMPLE_COLUMNS = [
+    "Index",
+    "BASE_YEAR",
+    "REP_SEX_CODE",
+    "BIRTH_YEAR",
+    "REGISTER_YM",
+    "OPEN_YM",
+    "CLOSE_YM",
+    "CLOSE_FLAG",
+    "REGION_CODE",
+    "DISTRICT_CODE",
+    "ACTIVITY_CODE",
+    "AMOUNT_CODE",
+    "EMP_ALL_TOTAL",
+    "EMP_REGULAR_TOTAL",
+    "EMP_REGULAR_MALE",
+    "EMP_REGULAR_FEMALE",
+    "EMP_TEMP_TOTAL",
+    "EMP_TEMP_MALE",
+    "EMP_TEMP_FEMALE",
+    "INDUSTRY_CODE",
+    "SUBCLASS_CODE",
+]
+SAMPLE_INTEGER_COLUMNS = {
+    "Index",
+    "BASE_YEAR",
+    "BIRTH_YEAR",
+    "ACTIVITY_CODE",
+    "AMOUNT_CODE",
+    "EMP_ALL_TOTAL",
+    "EMP_REGULAR_TOTAL",
+    "EMP_REGULAR_MALE",
+    "EMP_REGULAR_FEMALE",
+    "EMP_TEMP_TOTAL",
+    "EMP_TEMP_MALE",
+    "EMP_TEMP_FEMALE",
+}
+SAMPLE_NULLABLE_COLUMNS = {
+    "BIRTH_YEAR",
+    "CLOSE_YM",
+    "EMP_ALL_TOTAL",
+    "EMP_REGULAR_TOTAL",
+    "EMP_REGULAR_MALE",
+    "EMP_REGULAR_FEMALE",
+    "EMP_TEMP_TOTAL",
+    "EMP_TEMP_MALE",
+    "EMP_TEMP_FEMALE",
+}
+
+
+def sample_column_schemas():
+    from sts.domain.models import ColumnKind, ColumnRole, ColumnSchema
+
+    derived = {"EMP_ALL_TOTAL", "EMP_REGULAR_TOTAL", "EMP_TEMP_TOTAL"}
+    return tuple(
+        ColumnSchema(
+            name=column,
+            kind=ColumnKind.INTEGER
+            if column in SAMPLE_INTEGER_COLUMNS
+            else ColumnKind.CATEGORICAL,
+            nullable=column in SAMPLE_NULLABLE_COLUMNS,
+            role=ColumnRole.DERIVED if column in derived else ColumnRole.MODEL,
+        )
+        for column in SAMPLE_COLUMNS
+    )
+
+
+def sample_csv_relation(path: Path) -> tuple[str, list[object]]:
+    return (
+        "read_csv(?, header=true, all_varchar=true, delim=',', quote='\"', "
+        "escape='\"', nullstr=['__STS_NULL_SENTINEL_6f7d8432__'], ignore_errors=false)",
+        [str(path)],
+    )
+
+
+def sample_normalize_projection(*, include_row_id: bool = True) -> str:
+    values: list[str] = []
+    if include_row_id:
+        values.append("__sts_row_id")
+    for column in SAMPLE_COLUMNS:
+        quoted = quote_identifier(column)
+        if column in SAMPLE_INTEGER_COLUMNS:
+            values.append(f"TRY_CAST(NULLIF({quoted}, 'NA') AS BIGINT) AS {quoted}")
+        elif column == "CLOSE_YM":
+            values.append(f"NULLIF({quoted}, 'NA') AS {quoted}")
+        else:
+            values.append(quoted)
+    return ",".join(values)
+
+
+SAMPLE_BLOCK_PREDICATES = {
+    "allowed_sex": "REP_SEX_CODE IS NULL OR REP_SEX_CODE NOT IN ('1','2','9')",
+    "sex_industry_fixed_combination": (
+        "REP_SEX_CODE NOT IN ('1','2','9') OR INDUSTRY_CODE <> 'I' "
+        "OR REP_SEX_CODE IS NULL OR INDUSTRY_CODE IS NULL"
+    ),
+    "closure_conditional": "CLOSE_FLAG = 'N' AND CLOSE_YM IS NOT NULL",
+}
+SAMPLE_DROP_PREDICATES = {
+    "employee_sum": (
+        "NOT ((EMP_REGULAR_TOTAL IS NULL AND (EMP_REGULAR_MALE IS NULL OR EMP_REGULAR_FEMALE IS NULL)) "
+        "OR (EMP_REGULAR_MALE IS NOT NULL AND EMP_REGULAR_FEMALE IS NOT NULL "
+        "AND EMP_REGULAR_TOTAL = EMP_REGULAR_MALE + EMP_REGULAR_FEMALE))"
+    ),
+    "temporary_employee_sum": (
+        "NOT ((EMP_TEMP_TOTAL IS NULL AND (EMP_TEMP_MALE IS NULL OR EMP_TEMP_FEMALE IS NULL)) "
+        "OR (EMP_TEMP_MALE IS NOT NULL AND EMP_TEMP_FEMALE IS NOT NULL "
+        "AND EMP_TEMP_TOTAL = EMP_TEMP_MALE + EMP_TEMP_FEMALE))"
+    ),
+    "overall_employee_sum": (
+        "NOT ((EMP_ALL_TOTAL IS NULL AND (EMP_REGULAR_TOTAL IS NULL OR EMP_TEMP_TOTAL IS NULL)) "
+        "OR (EMP_REGULAR_TOTAL IS NOT NULL AND EMP_TEMP_TOTAL IS NOT NULL "
+        "AND EMP_ALL_TOTAL = EMP_REGULAR_TOTAL + EMP_TEMP_TOTAL))"
+    ),
+}
+
+
+def sample_rule_audit(
+    connection: duckdb.DuckDBPyConnection, path: Path
+) -> dict[str, object]:
+    predicates = {**SAMPLE_BLOCK_PREDICATES, **SAMPLE_DROP_PREDICATES}
+    count_expressions = [
+        f"count(*) FILTER (WHERE {predicate})" for predicate in predicates.values()
+    ]
+    drop_union = " OR ".join(f"({value})" for value in SAMPLE_DROP_PREDICATES.values())
+    overlap_terms = " + ".join(
+        f"CAST(({value}) AS INTEGER)" for value in SAMPLE_DROP_PREDICATES.values()
+    )
+    values = connection.execute(
+        "SELECT count(*), "
+        + ",".join(count_expressions)
+        + f", count(*) FILTER (WHERE {drop_union})"
+        + f", count(*) FILTER (WHERE ({overlap_terms}) > 1)"
+        + " FROM read_parquet(?)",
+        [str(path)],
+    ).fetchone()
+    names = tuple(predicates)
+    per_rule = dict(
+        zip(names, (int(value) for value in values[1 : 1 + len(names)]), strict=True)
+    )
+    return {
+        "rows": int(values[0]),
+        "per_rule": per_rule,
+        "drop_union_count": int(values[-2]),
+        "drop_overlap_count": int(values[-1]),
+    }
+
+
+def sample_rule_violations(
+    connection: duckdb.DuckDBPyConnection, path: Path
+) -> dict[str, int]:
+    return dict(sample_rule_audit(connection, path)["per_rule"])
+
+
+SAMPLE_STRUCTURAL_LATENT = "__sts_sex_industry_combination"
+SAMPLE_ALLOWED_STRUCTURAL_VALUES = ("1:I", "2:I", "9:I")
+
+
+def sample_reconstruction_projection(*, index_offset: int) -> list[str]:
+    combination = quote_identifier(SAMPLE_STRUCTURAL_LATENT)
+    select: list[str] = []
+    for column in SAMPLE_COLUMNS:
+        quoted = quote_identifier(column)
+        if column == "Index":
+            select.append(
+                f"(row_number() OVER () + {index_offset})::BIGINT AS {quoted}"
+            )
+        elif column == "REP_SEX_CODE":
+            select.append(f"split_part({combination}, ':', 1) AS {quoted}")
+        elif column == "INDUSTRY_CODE":
+            select.append(f"split_part({combination}, ':', 2) AS {quoted}")
+        elif column == "CLOSE_YM":
+            select.append(
+                f"CASE WHEN CLOSE_FLAG = 'N' THEN NULL ELSE {quoted} END AS {quoted}"
+            )
+        elif column == "EMP_ALL_TOTAL":
+            select.append(
+                "CASE WHEN EMP_REGULAR_MALE IS NULL OR EMP_REGULAR_FEMALE IS NULL "
+                "OR EMP_TEMP_MALE IS NULL OR EMP_TEMP_FEMALE IS NULL THEN NULL "
+                "ELSE TRY_CAST(EMP_REGULAR_MALE AS BIGINT) + TRY_CAST(EMP_REGULAR_FEMALE AS BIGINT) "
+                "+ TRY_CAST(EMP_TEMP_MALE AS BIGINT) + TRY_CAST(EMP_TEMP_FEMALE AS BIGINT) "
+                "END::BIGINT AS EMP_ALL_TOTAL"
+            )
+        elif column == "EMP_REGULAR_TOTAL":
+            select.append(
+                "CASE WHEN EMP_REGULAR_MALE IS NULL OR EMP_REGULAR_FEMALE IS NULL THEN NULL "
+                "ELSE TRY_CAST(EMP_REGULAR_MALE AS BIGINT) + TRY_CAST(EMP_REGULAR_FEMALE AS BIGINT) "
+                "END::BIGINT AS EMP_REGULAR_TOTAL"
+            )
+        elif column == "EMP_TEMP_TOTAL":
+            select.append(
+                "CASE WHEN EMP_TEMP_MALE IS NULL OR EMP_TEMP_FEMALE IS NULL THEN NULL "
+                "ELSE TRY_CAST(EMP_TEMP_MALE AS BIGINT) + TRY_CAST(EMP_TEMP_FEMALE AS BIGINT) "
+                "END::BIGINT AS EMP_TEMP_TOTAL"
+            )
+        elif column in SAMPLE_INTEGER_COLUMNS:
+            select.append(f"TRY_CAST({quoted} AS BIGINT) AS {quoted}")
+        elif column == "DISTRICT_CODE":
+            select.append(
+                "CASE WHEN DISTRICT_CODE IS NULL THEN NULL ELSE substr(DISTRICT_CODE, 1, 2) || "
+                "repeat('*', greatest(length(DISTRICT_CODE) - 2, 0)) END AS DISTRICT_CODE"
+            )
+        else:
+            select.append(quoted)
+    return select
+
+
+def coordinate_sample_residual_rejection(
+    connection: duckdb.DuckDBPyConnection,
+    *,
+    workspace: Path,
+    output_path: Path,
+    output_rows: int,
+    candidate_batch_rows: int,
+    expected_candidate_columns: set[str],
+    generate_candidate: Callable[[int, int, int], Path],
+    max_candidate_multiplier: int = 20,
+) -> dict[str, object]:
+    if output_rows < 1 or candidate_batch_rows < 1 or max_candidate_multiplier < 1:
+        raise ValueError("residual rejection limits must be positive")
+    if output_path.exists():
+        raise VerificationFailure("residual rejection output already exists")
+    max_candidate_rows = max_candidate_multiplier * output_rows
+    staging = output_path.parent / f".residual-repair.part-{uuid.uuid4().hex}"
+    staging.mkdir(parents=True, exist_ok=False)
+    candidate_paths: list[Path] = []
+    accepted_paths: list[Path] = []
+    accepted_rows = 0
+    candidate_rows = 0
+    rejected_structural_rows = 0
+    candidate_index = 0
+    latent = quote_identifier(SAMPLE_STRUCTURAL_LATENT)
+    allowed = ",".join(sql_string(value) for value in SAMPLE_ALLOWED_STRUCTURAL_VALUES)
+    valid_predicate = f"{latent} IN ({allowed})"
+    success = False
+    try:
+        while accepted_rows < output_rows and candidate_rows < max_candidate_rows:
+            requested = min(candidate_batch_rows, max_candidate_rows - candidate_rows)
+            candidate_path = generate_candidate(
+                candidate_index, candidate_rows, requested
+            )
+            candidate_paths.append(candidate_path)
+            described = connection.execute(
+                "DESCRIBE SELECT * FROM read_parquet(?)", [str(candidate_path)]
+            ).fetchall()
+            actual_columns = {str(row[0]) for row in described}
+            if actual_columns != expected_candidate_columns:
+                raise VerificationFailure(
+                    f"candidate schema mismatch: {sorted(actual_columns)} != "
+                    f"{sorted(expected_candidate_columns)}"
+                )
+            actual_rows = int(
+                connection.execute(
+                    "SELECT count(*) FROM read_parquet(?)", [str(candidate_path)]
+                ).fetchone()[0]
+            )
+            if actual_rows != requested:
+                raise VerificationFailure(
+                    f"candidate rows {actual_rows} do not match request {requested}"
+                )
+            structurally_valid = int(
+                connection.execute(
+                    f"SELECT count(*) FROM read_parquet(?) WHERE {valid_predicate}",
+                    [str(candidate_path)],
+                ).fetchone()[0]
+            )
+            rejected_structural_rows += actual_rows - structurally_valid
+            candidate_rows += actual_rows
+            take_rows = min(output_rows - accepted_rows, structurally_valid)
+            if take_rows:
+                accepted_path = staging / f"part-{candidate_index:05d}.parquet"
+                projection = sample_reconstruction_projection(
+                    index_offset=accepted_rows
+                )
+                copy_query_atomic(
+                    connection,
+                    f"SELECT {','.join(projection)} FROM read_parquet(?) "
+                    f"WHERE {valid_predicate} LIMIT ?",
+                    [str(candidate_path), take_rows],
+                    accepted_path,
+                    format_clause="FORMAT PARQUET, COMPRESSION ZSTD",
+                )
+                violations = sample_rule_violations(connection, accepted_path)
+                if any(violations.values()):
+                    raise VerificationFailure(
+                        f"reconstructed candidate failed full validation: {violations}"
+                    )
+                accepted_actual = int(
+                    connection.execute(
+                        "SELECT count(*) FROM read_parquet(?)", [str(accepted_path)]
+                    ).fetchone()[0]
+                )
+                if accepted_actual != take_rows:
+                    raise VerificationFailure("accepted candidate quota was not exact")
+                accepted_paths.append(accepted_path)
+                accepted_rows += accepted_actual
+            candidate_index += 1
+        if accepted_rows != output_rows:
+            raise VerificationFailure(
+                "RULE_FEASIBILITY_EXHAUSTED: global residual rejection budget exhausted"
+            )
+        copy_query_atomic(
+            connection,
+            'SELECT * FROM read_parquet(?) ORDER BY "Index"',
+            [[str(path) for path in accepted_paths]],
+            output_path,
+            format_clause="FORMAT PARQUET, COMPRESSION ZSTD",
+        )
+        published_rows = int(
+            connection.execute(
+                "SELECT count(*) FROM read_parquet(?)", [str(output_path)]
+            ).fetchone()[0]
+        )
+        if published_rows != output_rows:
+            output_path.unlink(missing_ok=True)
+            raise VerificationFailure(
+                "residual rejection published a non-exact row count"
+            )
+        success = True
+        return {
+            "requested_rows": output_rows,
+            "accepted_rows": accepted_rows,
+            "candidate_rows": candidate_rows,
+            "candidate_shards": candidate_index,
+            "rejected_structural_rows": rejected_structural_rows,
+            "max_candidate_rows": max_candidate_rows,
+        }
+    finally:
+        if not success:
+            output_path.unlink(missing_ok=True)
+        for candidate_path in candidate_paths:
+            candidate_path.unlink(missing_ok=True)
+        shutil.rmtree(staging, ignore_errors=True)
+
+
+def filter_sample_drop_rows(
+    connection: duckdb.DuckDBPyConnection,
+    source: Path,
+    destination: Path,
+) -> dict[str, object]:
+    audit = sample_rule_audit(connection, source)
+    drop_union = " OR ".join(f"({value})" for value in SAMPLE_DROP_PREDICATES.values())
+    copy_query_atomic(
+        connection,
+        f"SELECT * FROM read_parquet(?) WHERE NOT ({drop_union})",
+        [str(source)],
+        destination,
+        format_clause="FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 131072",
+    )
+    output_rows = int(
+        connection.execute(
+            "SELECT count(*) FROM read_parquet(?)", [str(destination)]
+        ).fetchone()[0]
+    )
+    if output_rows != int(audit["rows"]) - int(audit["drop_union_count"]):
+        raise VerificationFailure(
+            "drop-row output count does not match the audited union"
+        )
+    return audit
+
+
+def detect_argn_runtime() -> tuple[dict[str, object], object | None]:
+    probe_path = PROJECT_ROOT / "probes" / "results" / "argn_contract.json"
+    interpreter = PROJECT_ROOT / "workers" / "argn" / ".venv" / "bin" / "python"
+    if not probe_path.is_file():
+        return {
+            "status": "unavailable",
+            "pinned": False,
+            "reason_code": "ARGN_PHASE0_RESULT_MISSING",
+        }, None
+    try:
+        from sts.jobs.utility import load_argn_feature_availability
+
+        availability = load_argn_feature_availability(probe_path)
+    except Exception as error:
+        return {
+            "status": "unavailable",
+            "pinned": False,
+            "reason_code": "ARGN_PHASE0_RESULT_INVALID",
+            "detail": str(error),
+        }, None
+    if not availability.backend_enabled:
+        return {
+            "status": "unavailable",
+            "pinned": True,
+            "reason_code": "ARGN_PHASE0_GATE_DISABLED",
+            "wheel_sha256": availability.engine_sha256,
+        }, None
+    if availability.engine_sha256 != ARGN_WHEEL_SHA256:
+        return {
+            "status": "unavailable",
+            "pinned": False,
+            "reason_code": "ARGN_WHEEL_HASH_MISMATCH",
+            "wheel_sha256": availability.engine_sha256,
+        }, None
+    if not interpreter.is_file():
+        return {
+            "status": "unavailable",
+            "pinned": True,
+            "reason_code": "ARGN_LOCKED_INTERPRETER_MISSING",
+            "wheel_sha256": availability.engine_sha256,
+        }, None
+    check = subprocess.run(
+        [
+            str(interpreter),
+            "-c",
+            "import importlib.metadata as m; assert m.version('mostlyai-engine') == '2.6.2'",
+        ],
+        check=False,
+        capture_output=True,
+        timeout=30,
+    )
+    if check.returncode != 0:
+        return {
+            "status": "unavailable",
+            "pinned": True,
+            "reason_code": "ARGN_LOCKED_IMPORT_FAILED",
+            "wheel_sha256": availability.engine_sha256,
+        }, None
+    return {
+        "status": "available",
+        "pinned": True,
+        "distribution": "mostlyai-engine",
+        "version": "2.6.2",
+        "wheel_sha256": availability.engine_sha256,
+        "phase0_probe_sha256": availability.probe_sha256,
+    }, availability
+
+
+def snapshot_file(path: Path, workspace: Path):
+    from sts.jobs.protocol import SnapshotFile
+
+    return SnapshotFile(
+        path=path.relative_to(workspace).as_posix(),
+        sha256=sha256_file(path),
+        size_bytes=path.stat().st_size,
+    )
+
+
+def run_worker_envelope(
+    request: object,
+    *,
+    workspace: Path,
+    operation: str,
+    timeout_seconds: int,
+) -> dict[str, Any]:
+    from sts.jobs.protocol import read_result
+
+    run_dir = workspace / "argn" / "protocol" / operation
+    run_dir.mkdir(parents=True, exist_ok=False)
+    request_path = run_dir / "request.json"
+    events_path = run_dir / "events.jsonl"
+    result_path = run_dir / "result.json"
+    stdout_path = run_dir / "stdout.log"
+    stderr_path = run_dir / "stderr.log"
+    request_payload = request.model_dump(mode="json")
+    write_atomic(request_path, canonical_json_bytes(request_payload) + b"\n")
+    interpreter = PROJECT_ROOT / "workers" / "argn" / ".venv" / "bin" / "python"
+    environment = {
+        **os.environ,
+        "PYTHONPATH": str(PROJECT_ROOT / "workers" / "argn" / "src"),
+    }
+    with stdout_path.open("wb") as stdout, stderr_path.open("wb") as stderr:
+        completed = subprocess.run(
+            [
+                str(interpreter),
+                "-m",
+                "argn_worker",
+                "run",
+                "--request",
+                str(request_path),
+                "--events",
+                str(events_path),
+                "--result",
+                str(result_path),
+            ],
+            cwd=PROJECT_ROOT,
+            env=environment,
+            stdout=stdout,
+            stderr=stderr,
+            check=False,
+            timeout=timeout_seconds,
+        )
+    if not result_path.is_file():
+        raise VerificationFailure(
+            f"ARGN {operation} exited {completed.returncode} without a result envelope"
+        )
+    envelope = read_result(result_path)
+    if completed.returncode != 0 or envelope.status != "success":
+        detail = envelope.error.model_dump(mode="json") if envelope.error else None
+        raise VerificationFailure(
+            f"ARGN {operation} failed: exit={completed.returncode}, result={detail}"
+        )
+    return envelope.model_dump(mode="json")
+
+
+def run_sample_argn(
+    connection: duckdb.DuckDBPyConnection,
+    *,
+    workspace: Path,
+    normalized_path: Path,
+    source_sha256: str,
+    fit_source_rows: int,
+    rules_sha256: str,
+    availability: object,
+    training_rows: int,
+    output_rows: int,
+    max_epochs: int,
+    max_minutes: int,
+    worker_rss_limit_bytes: int,
+) -> dict[str, object]:
+    from sts.jobs.protocol import SnapshotFile
+    from sts.jobs.seeds import CandidateShardPlan, derive_uint32_seed
+    from sts.jobs.utility import (
+        CheckpointCompatibility,
+        TRAIN_THRESHOLD_U64,
+        bounded_priority_sample,
+        create_argn_fit_request,
+        create_argn_generate_request,
+    )
+
+    argn_dir = workspace / "argn"
+    argn_dir.mkdir(exist_ok=True)
+    sample_path = argn_dir / "bounded-training.parquet"
+    fixed_combination = (
+        "REP_SEX_CODE || ':' || INDUSTRY_CODE AS __sts_sex_industry_combination"
+    )
+    model_columns = [
+        column
+        for column in SAMPLE_COLUMNS
+        if column
+        not in {
+            "Index",
+            "REP_SEX_CODE",
+            "INDUSTRY_CODE",
+            "EMP_ALL_TOTAL",
+            "EMP_REGULAR_TOTAL",
+            "EMP_TEMP_TOTAL",
+        }
+    ]
+    model_projection: list[str] = []
+    for column in model_columns:
+        if column == "DISTRICT_CODE":
+            model_projection.append(
+                "CASE WHEN DISTRICT_CODE IS NULL THEN NULL ELSE substr(DISTRICT_CODE, 1, 2) || "
+                "repeat('*', greatest(length(DISTRICT_CODE) - 2, 0)) END AS DISTRICT_CODE"
+            )
+        else:
+            model_projection.append(quote_identifier(column))
+    model_projection.append(fixed_combination)
+    bounded_sample = bounded_priority_sample(
+        connection,
+        normalized_parquet=normalized_path,
+        partition_key=os.urandom(32),
+        max_rows=training_rows,
+    )
+    registered_sample = "__sts_verify_argn_bounded"
+    connection.register(registered_sample, bounded_sample.table)
+    try:
+        copy_query_atomic(
+            connection,
+            f"SELECT {','.join(model_projection)} FROM {registered_sample}",
+            [],
+            sample_path,
+            format_clause="FORMAT PARQUET, COMPRESSION ZSTD",
+        )
+    finally:
+        connection.unregister(registered_sample)
+    actual_training_rows = int(
+        connection.execute(
+            "SELECT count(*) FROM read_parquet(?)", [str(sample_path)]
+        ).fetchone()[0]
+    )
+    if actual_training_rows != training_rows:
+        raise VerificationFailure(
+            f"ARGN bounded training sample has {actual_training_rows}, expected {training_rows}"
+        )
+
+    schema_sha256 = hashlib.sha256(
+        canonical_json_bytes(
+            connection.execute(
+                "DESCRIBE SELECT * FROM read_parquet(?)", [str(sample_path)]
+            ).fetchall()
+        )
+    ).hexdigest()
+    compatibility = CheckpointCompatibility(
+        source_manifest_sha256=source_sha256,
+        schema_sha256=schema_sha256,
+        rules_sha256=rules_sha256,
+        engine_sha256=availability.engine_sha256,
+    )
+    sample_snapshot = SnapshotFile(
+        path=sample_path.relative_to(workspace).as_posix(),
+        sha256=sha256_file(sample_path),
+        size_bytes=sample_path.stat().st_size,
+    )
+    cancellation_path = "argn/cancel.requested"
+    checkpoint_relative = "argn/checkpoint"
+    fit_request = create_argn_fit_request(
+        workspace_root=workspace,
+        request_id=f"sample-fit-{uuid.uuid4().hex}",
+        job_id=f"sample-{uuid.uuid4().hex}",
+        attempt=1,
+        cancellation_path=cancellation_path,
+        bounded_training_sample=sample_snapshot,
+        checkpoint_path=checkpoint_relative,
+        compatibility=compatibility,
+        max_epochs=max_epochs,
+        max_minutes=max_minutes,
+        model_size="MOSTLY_AI/Small",
+        device="cpu",
+        split_seed=derive_uint32_seed(20260722, purpose="sample-fit", index=0),
+        worker_lease_bytes=worker_rss_limit_bytes,
+    )
+    fit_result = run_worker_envelope(
+        fit_request,
+        workspace=workspace,
+        operation="fit",
+        timeout_seconds=max_minutes * 60 + 600,
+    )
+
+    checkpoint = workspace / checkpoint_relative
+    checkpoint_files = {
+        f"checkpoint_{index:06d}": snapshot_file(path, workspace)
+        for index, path in enumerate(
+            sorted(
+                candidate for candidate in checkpoint.rglob("*") if candidate.is_file()
+            )
+        )
+    }
+    candidate_dir = workspace / "argn" / "candidates"
+    candidate_dir.mkdir(parents=True, exist_ok=True)
+    generation_results: list[dict[str, Any]] = []
+    engine_seeds: list[int] = []
+    max_candidate_shards = 20
+
+    def generate_candidate(
+        candidate_index: int, row_start: int, requested_rows: int
+    ) -> Path:
+        engine_seed = derive_uint32_seed(
+            20260722,
+            purpose="sample-generate",
+            index=candidate_index,
+        )
+        engine_seeds.append(engine_seed)
+        candidate = CandidateShardPlan(
+            candidate_index=candidate_index,
+            process_index=0,
+            row_start=row_start,
+            output_rows=requested_rows,
+            engine_seed=engine_seed,
+        )
+        candidate_relative = f"argn/candidates/candidate-{candidate_index:05d}.parquet"
+        generate_request = create_argn_generate_request(
+            workspace_root=workspace,
+            request_id=f"sample-generate-{uuid.uuid4().hex}",
+            job_id=f"sample-{uuid.uuid4().hex}",
+            attempt=1,
+            cancellation_path=cancellation_path,
+            checkpoint_files=checkpoint_files,
+            checkpoint_path=checkpoint_relative,
+            candidate_output_path=candidate_relative,
+            candidate=candidate,
+            seed_count=max_candidate_shards,
+            batch_size=min(10_000, requested_rows),
+            device="cpu",
+            process_count=1,
+            actual_compatibility=compatibility,
+            expected_compatibility=compatibility,
+            worker_lease_bytes=worker_rss_limit_bytes,
+        )
+        generation_results.append(
+            run_worker_envelope(
+                generate_request,
+                workspace=workspace,
+                operation=f"generate-{candidate_index:05d}",
+                timeout_seconds=max_minutes * 60 + 600,
+            )
+        )
+        return workspace / candidate_relative
+
+    output_path = workspace / "synthetic" / "synthetic.parquet"
+    expected_model_columns = set(model_columns) | {SAMPLE_STRUCTURAL_LATENT}
+    coordinator = coordinate_sample_residual_rejection(
+        connection,
+        workspace=workspace,
+        output_path=output_path,
+        output_rows=output_rows,
+        candidate_batch_rows=output_rows,
+        expected_candidate_columns=expected_model_columns,
+        generate_candidate=generate_candidate,
+        max_candidate_multiplier=20,
+    )
+    output_violations = sample_rule_violations(connection, output_path)
+    actual_output_rows = int(
+        connection.execute(
+            "SELECT count(*) FROM read_parquet(?)", [str(output_path)]
+        ).fetchone()[0]
+    )
+    if actual_output_rows != output_rows or any(output_violations.values()):
+        output_path.unlink(missing_ok=True)
+        raise VerificationFailure(
+            f"ARGN repaired output failed: rows={actual_output_rows}, rules={output_violations}"
+        )
+    return {
+        "status": "functional_run_completed",
+        "pinned": True,
+        "distribution": "mostlyai-engine",
+        "version": "2.6.2",
+        "wheel_sha256": availability.engine_sha256,
+        "training_rows": training_rows,
+        "train_population_rows": bounded_sample.train_population_rows,
+        "holdout_rows": fit_source_rows - bounded_sample.train_population_rows,
+        "partition_key_commitment_sha256": (
+            bounded_sample.partition.key_commitment_sha256
+        ),
+        "train_threshold_u64": TRAIN_THRESHOLD_U64,
+        "max_epochs": max_epochs,
+        "output_rows": output_rows,
+        "device": "cpu",
+        "fit_result": fit_result,
+        "generation_results": generation_results,
+        "generation_engine_seeds": engine_seeds,
+        "residual_rejection": coordinator,
+        "output_path": output_path.relative_to(workspace).as_posix(),
+        "rule_violations": output_violations,
+    }
+
+
+def run_sample(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
+    source = args.input.resolve()
+    run_id = uuid.uuid4().hex
+    workspace = (
+        args.workspace or PROJECT_ROOT / "var" / "verify" / "sample-m4" / run_id
+    ).resolve()
+    workspace.mkdir(parents=True, exist_ok=False)
+    configuration = {
+        "input": str(source),
+        "expected_sha256": EXPECTED_SAMPLE_SHA256,
+        "expected_size_bytes": EXPECTED_SAMPLE_SIZE,
+        "expected_rows": EXPECTED_SAMPLE_ROWS,
+        "expected_columns": EXPECTED_SAMPLE_COLUMNS,
+        "argn_training_rows": args.argn_training_rows,
+        "argn_max_epochs": args.argn_max_epochs,
+        "argn_output_rows": args.argn_output_rows,
+        "duckdb_memory_limit": args.memory_limit,
+        "rss_limit_bytes": args.rss_limit_bytes,
+        "workspace": str(workspace),
+    }
+    result = base_result("sample-m4", configuration)
+    connection = duckdb.connect()
+    exit_code = 1
+    try:
+        configure_duckdb(
+            connection,
+            memory_limit=args.memory_limit,
+            temp_directory=workspace / "duckdb-spill",
+        )
+        with ResourceMonitor() as resources:
+            add_gate(
+                result,
+                "source_exists",
+                source.is_file(),
+                observed=source.is_file(),
+                expected=True,
+            )
+            source_size = source.stat().st_size
+            source_sha256 = sha256_file(source)
+            add_gate(
+                result,
+                "source_size",
+                source_size == EXPECTED_SAMPLE_SIZE,
+                observed=source_size,
+                expected=EXPECTED_SAMPLE_SIZE,
+            )
+            add_gate(
+                result,
+                "source_sha256",
+                source_sha256 == EXPECTED_SAMPLE_SHA256,
+                observed=source_sha256,
+                expected=EXPECTED_SAMPLE_SHA256,
+            )
+
+            relation, relation_parameters = sample_csv_relation(source)
+            described = connection.execute(
+                f"DESCRIBE SELECT * FROM {relation}", relation_parameters
+            ).fetchall()
+            columns = [str(row[0]) for row in described]
+            add_gate(
+                result,
+                "source_columns",
+                columns == SAMPLE_COLUMNS,
+                observed=columns,
+                expected=SAMPLE_COLUMNS,
+            )
+            raw_path = workspace / "datasets" / "raw.parquet"
+            copy_query_atomic(
+                connection,
+                f"SELECT row_number() OVER () - 1 AS __sts_row_id, * FROM {relation}",
+                relation_parameters,
+                raw_path,
+                format_clause="FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 131072",
+            )
+            raw_rows = int(
+                connection.execute(
+                    "SELECT count(*) FROM read_parquet(?)", [str(raw_path)]
+                ).fetchone()[0]
+            )
+            add_gate(
+                result,
+                "source_rows",
+                raw_rows == EXPECTED_SAMPLE_ROWS,
+                observed=raw_rows,
+                expected=EXPECTED_SAMPLE_ROWS,
+            )
+
+            invalid_sex = int(
+                connection.execute(
+                    "SELECT count(*) FROM read_parquet(?) "
+                    "WHERE REP_SEX_CODE IS NULL OR REP_SEX_CODE NOT IN ('1','2')",
+                    [str(raw_path)],
+                ).fetchone()[0]
+            )
+            add_gate(
+                result,
+                "sex_code_regression",
+                invalid_sex == 84,
+                observed={
+                    "violations": invalid_sex,
+                    "source_action": "block",
+                    "blocked": True,
+                },
+                expected={"violations": 84, "source_action": "block", "blocked": True},
+            )
+            profile_expressions: list[str] = []
+            for column in SAMPLE_COLUMNS:
+                quoted = quote_identifier(column)
+                profile_expressions.extend(
+                    [
+                        f"count(*) FILTER (WHERE {quoted} IS NULL OR {quoted} = 'NA')",
+                        f"approx_count_distinct({quoted})",
+                        f"min({quoted})",
+                        f"max({quoted})",
+                    ]
+                )
+            profile_values = connection.execute(
+                f"SELECT {','.join(profile_expressions)} FROM read_parquet(?)",
+                [str(raw_path)],
+            ).fetchone()
+            column_profiles = {}
+            for index, column in enumerate(SAMPLE_COLUMNS):
+                offset = index * 4
+                column_profiles[column] = {
+                    "null_token_count": int(profile_values[offset]),
+                    "approx_distinct": int(profile_values[offset + 1]),
+                    "min_raw": profile_values[offset + 2],
+                    "max_raw": profile_values[offset + 3],
+                }
+            add_gate(
+                result,
+                "full_profile_columns",
+                len(column_profiles) == EXPECTED_SAMPLE_COLUMNS,
+                observed=len(column_profiles),
+                expected=EXPECTED_SAMPLE_COLUMNS,
+            )
+            profile_payload = {
+                "version": "1.0",
+                "rows": raw_rows,
+                "columns": len(columns),
+                "source_sha256": source_sha256,
+                "source_size_bytes": source_size,
+                "REP_SEX_CODE_not_in_1_2": invalid_sex,
+                "column_profiles": column_profiles,
+            }
+            profile_path = workspace / "profile" / "raw-profile.json"
+            write_atomic(profile_path, canonical_json_bytes(profile_payload) + b"\n")
+
+            cast_columns = sorted(SAMPLE_INTEGER_COLUMNS)
+            cast_expressions = [
+                "count(*) FILTER (WHERE "
+                f"{quote_identifier(column)} IS NOT NULL "
+                f"AND {quote_identifier(column)} <> 'NA' "
+                f"AND TRY_CAST({quote_identifier(column)} AS BIGINT) IS NULL) "
+                f"AS {quote_identifier(column)}"
+                for column in cast_columns
+            ]
+            cast_values = connection.execute(
+                f"SELECT {','.join(cast_expressions)} FROM read_parquet(?)",
+                [str(raw_path)],
+            ).fetchone()
+            cast_failures = dict(
+                zip(cast_columns, (int(value) for value in cast_values), strict=True)
+            )
+            add_gate(
+                result,
+                "normalization_casts",
+                all(value == 0 for value in cast_failures.values()),
+                observed=cast_failures,
+                expected={column: 0 for column in cast_columns},
+            )
+            normalized_path = workspace / "datasets" / "normalized.parquet"
+            copy_query_atomic(
+                connection,
+                f"SELECT {sample_normalize_projection()} FROM read_parquet(?)",
+                [str(raw_path)],
+                normalized_path,
+                format_clause="FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 131072",
+            )
+            normalized_rows = int(
+                connection.execute(
+                    "SELECT count(*) FROM read_parquet(?)", [str(normalized_path)]
+                ).fetchone()[0]
+            )
+            add_gate(
+                result,
+                "normalized_rows",
+                normalized_rows == EXPECTED_SAMPLE_ROWS,
+                observed=normalized_rows,
+                expected=EXPECTED_SAMPLE_ROWS,
+            )
+            normalized_description = [
+                (str(row[0]), str(row[1]))
+                for row in connection.execute(
+                    "DESCRIBE SELECT * FROM read_parquet(?)", [str(normalized_path)]
+                ).fetchall()
+            ]
+            normalized_expected = [("__sts_row_id", "BIGINT")] + [
+                (column, "BIGINT" if column in SAMPLE_INTEGER_COLUMNS else "VARCHAR")
+                for column in SAMPLE_COLUMNS
+            ]
+            add_gate(
+                result,
+                "normalized_schema",
+                normalized_description == normalized_expected,
+                observed=normalized_description,
+                expected=normalized_expected,
+            )
+            rules = [
+                {
+                    "id": "public-mask-cdw",
+                    "kind": "mask_prefix",
+                    "provenance": "public",
+                    "source_action": "block",
+                    "column": "DISTRICT_CODE",
+                    "keep_chars": 2,
+                },
+                {
+                    "id": "public-sex-domain",
+                    "kind": "allowed_values",
+                    "provenance": "public",
+                    "source_action": "block",
+                    "column": "REP_SEX_CODE",
+                    "values": ["1", "2", "9"],
+                },
+                {
+                    "id": "public-sex-industry-combination",
+                    "kind": "fixed_combination",
+                    "provenance": "public",
+                    "source_action": "block",
+                    "columns": ["REP_SEX_CODE", "INDUSTRY_CODE"],
+                    "allowed_tuples": [
+                        ["1", "I"],
+                        ["2", "I"],
+                        ["9", "I"],
+                    ],
+                },
+                {
+                    "id": "public-open-has-no-close-month",
+                    "kind": "conditional_set",
+                    "provenance": "public",
+                    "source_action": "block",
+                    "when": {
+                        "kind": "comparison",
+                        "column": "CLOSE_FLAG",
+                        "op": "eq",
+                        "value": "N",
+                    },
+                    "target": "CLOSE_YM",
+                    "value": None,
+                },
+                {
+                    "id": "public-employee-total",
+                    "kind": "sum_equals",
+                    "provenance": "public",
+                    "source_action": "drop_row",
+                    "sources": ["EMP_REGULAR_MALE", "EMP_REGULAR_FEMALE"],
+                    "target": "EMP_REGULAR_TOTAL",
+                    "tolerance": 0,
+                },
+                {
+                    "id": "public-temporary-employee-total",
+                    "kind": "sum_equals",
+                    "provenance": "public",
+                    "source_action": "drop_row",
+                    "sources": ["EMP_TEMP_MALE", "EMP_TEMP_FEMALE"],
+                    "target": "EMP_TEMP_TOTAL",
+                    "tolerance": 0,
+                },
+                {
+                    "id": "public-overall-employee-total",
+                    "kind": "sum_equals",
+                    "provenance": "public",
+                    "source_action": "drop_row",
+                    "sources": ["EMP_REGULAR_TOTAL", "EMP_TEMP_TOTAL"],
+                    "target": "EMP_ALL_TOTAL",
+                    "tolerance": 0,
+                },
+            ]
+            from sts.rules import compile_rules
+
+            compiled_rules = compile_rules(
+                sample_column_schemas(),
+                rules,
+                mode="utility",
+            )
+            add_gate(
+                result,
+                "public_rule_compilation",
+                len(compiled_rules.rules) == len(rules),
+                observed={"compiled_rules": len(compiled_rules.rules)},
+                expected={"compiled_rules": len(rules)},
+            )
+            rules_payload = {"version": "1.0", "rules": rules}
+            rules_sha256 = hashlib.sha256(
+                canonical_json_bytes(rules_payload)
+            ).hexdigest()
+            rules_payload["sha256"] = rules_sha256
+            rules_path = workspace / "rules" / f"rules-{rules_sha256}.json"
+            write_atomic(rules_path, canonical_json_bytes(rules_payload) + b"\n")
+            source_audit = sample_rule_audit(connection, normalized_path)
+            per_rule = dict(source_audit["per_rule"])
+            blocking_violations = {
+                name: per_rule[name] for name in SAMPLE_BLOCK_PREDICATES
+            }
+            add_gate(
+                result,
+                "corrected_public_rules",
+                all(value == 0 for value in blocking_violations.values()),
+                observed=blocking_violations,
+                expected={name: 0 for name in SAMPLE_BLOCK_PREDICATES},
+            )
+            source_audit_path = (
+                workspace / "reports" / "source-rule-audit-internal.json"
+            )
+            source_audit_payload = {
+                "version": "1.0",
+                "release_safe": False,
+                "contains_private_source_information": True,
+                "per_rule_violation_counts": per_rule,
+                "drop_union_count": source_audit["drop_union_count"],
+                "drop_overlap_count": source_audit["drop_overlap_count"],
+                "source_rows": source_audit["rows"],
+            }
+            write_atomic(
+                source_audit_path,
+                canonical_json_bytes(source_audit_payload) + b"\n",
+            )
+            fit_source_path = workspace / "datasets" / "normalized-source-valid.parquet"
+            filter_sample_drop_rows(
+                connection,
+                normalized_path,
+                fit_source_path,
+            )
+            filtered_audit = sample_rule_audit(connection, fit_source_path)
+            filtered_rows = int(filtered_audit["rows"])
+            filtered_drop_counts = {
+                name: dict(filtered_audit["per_rule"])[name]
+                for name in SAMPLE_DROP_PREDICATES
+            }
+            add_gate(
+                result,
+                "source_drop_row_filter",
+                all(value == 0 for value in filtered_drop_counts.values())
+                and filtered_rows
+                == normalized_rows - int(source_audit["drop_union_count"]),
+                observed={
+                    "filtered_rows": filtered_rows,
+                    "audit_artifact_sha256": sha256_file(source_audit_path),
+                },
+                expected={
+                    "drop_rules_zero_after_filter": True,
+                    "rows_equal_source_minus_audited_union": True,
+                },
+            )
+
+            argn_status, availability = detect_argn_runtime()
+            if availability is not None:
+                argn_status = run_sample_argn(
+                    connection,
+                    workspace=workspace,
+                    normalized_path=fit_source_path,
+                    source_sha256=source_sha256,
+                    fit_source_rows=filtered_rows,
+                    rules_sha256=rules_sha256,
+                    availability=availability,
+                    training_rows=args.argn_training_rows,
+                    output_rows=args.argn_output_rows,
+                    max_epochs=args.argn_max_epochs,
+                    max_minutes=args.argn_max_minutes,
+                    worker_rss_limit_bytes=args.worker_rss_limit_bytes,
+                )
+                add_gate(
+                    result,
+                    "argn_functional_run",
+                    argn_status["status"] == "functional_run_completed",
+                    observed={
+                        "training_rows": argn_status["training_rows"],
+                        "max_epochs": argn_status["max_epochs"],
+                        "output_rows": argn_status["output_rows"],
+                    },
+                    expected={
+                        "training_rows": args.argn_training_rows,
+                        "max_epochs": args.argn_max_epochs,
+                        "output_rows": args.argn_output_rows,
+                    },
+                )
+            else:
+                result["gates"].append(
+                    {
+                        "name": "argn_functional_run",
+                        "status": "unavailable",
+                        "observed": argn_status,
+                        "expected": "real pinned runtime support",
+                        "message": "ARGN was not executed because runtime support was not present",
+                    }
+                )
+            result["engine_benchmark"] = unavailable_engine_benchmark(argn_status)
+
+            output_path_value = argn_status.get("output_path")
+            if not isinstance(output_path_value, str):
+                raise VerificationFailure(
+                    "sample-m4 cannot prove exact artifacts without a supported real ARGN runtime"
+                )
+            output_path = workspace / output_path_value
+            output_rows = int(
+                connection.execute(
+                    "SELECT count(*) FROM read_parquet(?)", [str(output_path)]
+                ).fetchone()[0]
+            )
+            output_description = [
+                (str(row[0]), str(row[1]))
+                for row in connection.execute(
+                    "DESCRIBE SELECT * FROM read_parquet(?)", [str(output_path)]
+                ).fetchall()
+            ]
+            output_columns = [name for name, _ in output_description]
+            output_violations = sample_rule_violations(connection, output_path)
+            add_gate(
+                result,
+                "output_schema_order",
+                output_columns == SAMPLE_COLUMNS,
+                observed=output_columns,
+                expected=SAMPLE_COLUMNS,
+            )
+            expected_types = [
+                (column, "BIGINT" if column in SAMPLE_INTEGER_COLUMNS else "VARCHAR")
+                for column in SAMPLE_COLUMNS
+            ]
+            add_gate(
+                result,
+                "output_dtypes",
+                output_description == expected_types,
+                observed=output_description,
+                expected=expected_types,
+            )
+            add_gate(
+                result,
+                "output_rows",
+                output_rows == args.argn_output_rows,
+                observed=output_rows,
+                expected=args.argn_output_rows,
+            )
+            add_gate(
+                result,
+                "output_hard_rules",
+                all(value == 0 for value in output_violations.values()),
+                observed=output_violations,
+                expected={name: 0 for name in output_violations},
+            )
+
+            csv_path = workspace / "exports" / "synthetic.csv"
+            projection = ",".join(quote_identifier(column) for column in SAMPLE_COLUMNS)
+            null_marker = "__STS_NULL_SAMPLE_M4__"
+            copy_query_atomic(
+                connection,
+                f"SELECT {projection} FROM read_parquet(?) ORDER BY {quote_identifier('Index')}",
+                [str(output_path)],
+                csv_path,
+                format_clause=(
+                    f"FORMAT CSV, HEADER true, NULL {sql_string(null_marker)}"
+                ),
+            )
+            from sts.export.canonical import scan_csv, scan_parquet
+
+            sample_schema = sample_column_schemas()
+            parquet_scan = scan_parquet([output_path], sample_schema)
+            csv_scan = scan_csv(csv_path, sample_schema, null_marker=null_marker)
+            parquet_rows = parquet_scan.row_count
+            csv_rows = csv_scan.row_count
+            parquet_hash = parquet_scan.canonical_content_sha256
+            csv_hash = csv_scan.canonical_content_sha256
+            sample_canonicalization = "sts-canonical-cell-v1"
+            add_gate(
+                result,
+                "canonical_content_equivalence",
+                parquet_rows == csv_rows == args.argn_output_rows
+                and parquet_hash == csv_hash,
+                observed={
+                    "parquet_rows": parquet_rows,
+                    "csv_rows": csv_rows,
+                    "parquet_sha256": parquet_hash,
+                    "csv_sha256": csv_hash,
+                    "canonicalization_version": sample_canonicalization,
+                },
+                expected={"rows": args.argn_output_rows, "hashes_equal": True},
+            )
+            manifest = {
+                "version": "1.0",
+                "rows": args.argn_output_rows,
+                "columns": SAMPLE_COLUMNS,
+                "schema_sha256": schema_signature(SAMPLE_COLUMNS),
+                "rules_sha256": rules_sha256,
+                "canonicalization_version": sample_canonicalization,
+                "canonical_content_sha256": parquet_hash,
+                "shards": [
+                    {
+                        "path": output_path.relative_to(workspace).as_posix(),
+                        "sha256": sha256_file(output_path),
+                        "size_bytes": output_path.stat().st_size,
+                    }
+                ],
+            }
+            manifest_path = workspace / "synthetic" / "manifest.json"
+            write_atomic(manifest_path, canonical_json_bytes(manifest) + b"\n")
+            zip_path = workspace / "exports" / "synthetic-parquet.zip"
+            create_zip64_store(
+                zip_path,
+                [
+                    (output_path, "synthetic/synthetic.parquet"),
+                    (manifest_path, "synthetic/manifest.json"),
+                ],
+            )
+            report_json, report_html = _write_report(
+                workspace,
+                title="Synthetic Table Studio sample-m4 verification",
+                summary={
+                    "source_sha256": source_sha256,
+                    "source_rows": raw_rows,
+                    "output_rows": output_rows,
+                    "rules_sha256": rules_sha256,
+                    "canonical_content_sha256": parquet_hash,
+                    "hard_rule_violations": sum(output_violations.values()),
+                    "comparative_engine_benchmark": "unavailable",
+                    "noninferiority": "not evaluated",
+                },
+            )
+            assets = report_asset_count(report_html)
+            add_gate(
+                result, "report_remote_assets", assets == 0, observed=assets, expected=0
+            )
+            partials = ensure_no_parts(workspace)
+            add_gate(
+                result, "no_partial_files", not partials, observed=partials, expected=[]
+            )
+            add_gate(
+                result,
+                "rss_limit",
+                resources.peak_rss_bytes < args.rss_limit_bytes,
+                observed=resources.peak_rss_bytes,
+                expected={"less_than": args.rss_limit_bytes},
+            )
+            result["resources"] = {
+                "peak_process_tree_rss_bytes": resources.peak_rss_bytes,
+                "rss_limit_bytes": args.rss_limit_bytes,
+                "duckdb_memory_limit": args.memory_limit,
+                "worker_rss_limit_bytes": args.worker_rss_limit_bytes,
+                "spill_bytes_observed": sum(
+                    path.stat().st_size
+                    for path in (workspace / "duckdb-spill").rglob("*")
+                    if path.is_file()
+                ),
+                "spill_required": False,
+            }
+            result["artifacts"] = [
+                artifact("raw_profile_json", profile_path, root=workspace),
+                artifact(
+                    "rules_json", rules_path, root=workspace, rules_sha256=rules_sha256
+                ),
+                artifact(
+                    "source_rule_audit_internal",
+                    source_audit_path,
+                    root=workspace,
+                    downloadable=False,
+                    release_safe=False,
+                    contains_private_source_information=True,
+                ),
+                artifact(
+                    "synthetic_parquet_manifest",
+                    manifest_path,
+                    root=workspace,
+                    rows=output_rows,
+                    canonical_content_sha256=parquet_hash,
+                ),
+                artifact(
+                    "synthetic_csv",
+                    csv_path,
+                    root=workspace,
+                    rows=output_rows,
+                    canonical_content_sha256=csv_hash,
+                ),
+                artifact("synthetic_parquet_zip", zip_path, root=workspace),
+                artifact("primary_report_json", report_json, root=workspace),
+                artifact(
+                    "primary_report_html", report_html, root=workspace, remote_assets=0
+                ),
+            ]
+            result["status"] = "passed"
+            exit_code = 0
+    except Exception as error:
+        result["status"] = "failed"
+        result["error"] = {"type": type(error).__name__, "message": str(error)}
+        if not any(gate["status"] == "failed" for gate in result["gates"]):
+            result["gates"].append(
+                {
+                    "name": "pipeline_execution",
+                    "status": "failed",
+                    "observed": type(error).__name__,
+                    "expected": "completed",
+                    "message": str(error),
+                }
+            )
+    finally:
+        connection.close()
+        result["completed_at"] = utc_now()
+        if not result["resources"]:
+            result["resources"] = {
+                "peak_process_tree_rss_bytes": locals().get("resources").peak_rss_bytes
+                if "resources" in locals()
+                else 0,
+                "rss_limit_bytes": args.rss_limit_bytes,
+                "duckdb_memory_limit": args.memory_limit,
+                "worker_rss_limit_bytes": args.worker_rss_limit_bytes,
+                "spill_bytes_observed": 0,
+                "spill_required": False,
+            }
+        persist_result(result, args.results_dir)
+    return result, exit_code
+
+
+def parser() -> argparse.ArgumentParser:
+    root = argparse.ArgumentParser(
+        prog="scripts/verify",
+        description="Run truthful Synthetic Table Studio M4 verification gates",
+    )
+    subparsers = root.add_subparsers(dest="target", required=True)
+
+    sample = subparsers.add_parser(
+        "sample-m4",
+        help="verify the approved 989,502-row sample and real ARGN functional path",
+    )
+    sample.add_argument(
+        "--input",
+        type=Path,
+        default=Path(
+            os.environ.get(
+                "STS_SAMPLE_CSV", "<local-sample>.csv"
+            )
+        ),
+    )
+    sample.add_argument("--workspace", type=Path)
+    sample.add_argument(
+        "--results-dir", type=Path, default=PROJECT_ROOT / "benchmarks" / "results"
+    )
+    sample.add_argument(
+        "--memory-limit", default=os.environ.get("STS_DUCKDB_MEMORY_LIMIT", "8GB")
+    )
+    sample.add_argument("--rss-limit-bytes", type=int, default=32 * 1024**3)
+    sample.add_argument("--worker-rss-limit-bytes", type=int, default=24 * 1024**3)
+    sample.add_argument("--argn-training-rows", type=int, default=50_000)
+    sample.add_argument("--argn-max-epochs", type=int, default=5)
+    sample.add_argument("--argn-output-rows", type=int, default=100_000)
+    sample.add_argument("--argn-max-minutes", type=int, default=120)
+
+    scale = subparsers.add_parser(
+        "scale-m4",
+        help="verify the bounded 2,000,000-row by 70-column control pipeline",
+    )
+    scale.add_argument("--rows", type=int, default=2_000_000)
+    scale.add_argument("--columns", type=int, default=70)
+    scale.add_argument("--batch-rows", type=int, default=100_000)
+    scale.add_argument("--evaluation-rows", type=int, default=200_000)
+    scale.add_argument("--workspace", type=Path)
+    scale.add_argument(
+        "--results-dir", type=Path, default=PROJECT_ROOT / "benchmarks" / "results"
+    )
+    scale.add_argument(
+        "--memory-limit",
+        default=os.environ.get("STS_DUCKDB_MEMORY_LIMIT", "1GB"),
+        help="DuckDB limit; the approved default is 1GB",
+    )
+    scale.add_argument(
+        "--spill-memory-limit",
+        help="reduced smoke only: lower memory during the forced spill probe; defaults to --memory-limit",
+    )
+    scale.add_argument("--rss-limit-bytes", type=int, default=8 * 1024**3)
+    scale.add_argument(
+        "--allow-zero-spill",
+        action="store_true",
+        help="reduced smoke only: do not require observed temp spill",
+    )
+    return root
+
+
+def main() -> int:
+    args = parser().parse_args()
+    if args.target == "sample-m4":
+        _, exit_code = run_sample(args)
+    elif args.target == "scale-m4":
+        _, exit_code = run_scale(args)
+    else:
+        raise AssertionError("unreachable verification target")
+    return exit_code
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

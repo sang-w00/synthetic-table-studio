@@ -1,0 +1,441 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import asyncio
+import contextlib
+import json
+import os
+import signal
+import socket
+import subprocess
+import sys
+import tempfile
+from http import HTTPStatus
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlsplit
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+APP_PYTHON = PROJECT_ROOT / "app" / ".venv" / "bin" / "python"
+if APP_PYTHON.is_file() and os.environ.get("STS_SERVE_VENV") != "1":
+    environment = {**os.environ, "STS_SERVE_VENV": "1"}
+    os.execve(
+        APP_PYTHON,
+        [str(APP_PYTHON), str(Path(__file__).resolve()), *sys.argv[1:]],
+        environment,
+    )
+APP_SOURCE = PROJECT_ROOT / "app" / "src"
+if str(APP_SOURCE) not in sys.path:
+    sys.path.insert(0, str(APP_SOURCE))
+
+from sts.api.app import create_app  # noqa: E402
+from sts.api.security import (  # noqa: E402
+    loopback_hosts,
+    loopback_origins,
+    validate_bind_host,
+)
+
+_HEADER_LIMIT = 128 * 1024
+_BODY_CHUNK = 1024 * 1024
+
+
+def _authority(host: str, port: int) -> str:
+    bare = host[1:-1] if host.startswith("[") and host.endswith("]") else host
+    return f"[{bare}]:{port}" if ":" in bare else f"{bare}:{port}"
+
+
+def _origin(host: str, port: int) -> str:
+    return f"http://{_authority(host, port)}"
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Serve Synthetic Table Studio on localhost"
+    )
+    parser.add_argument("--workspace", required=True, type=Path)
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", default=8765, type=int)
+    parser.add_argument(
+        "--unsafe-allow-non-loopback",
+        action="store_true",
+        help="accept DNS-rebinding and network-exposure risk for a non-loopback bind",
+    )
+    parser.add_argument(
+        "--dev",
+        action="store_true",
+        help="run Vite on --port and proxy /api to an internal loopback app server",
+    )
+    parser.add_argument(
+        "--skip-web-build",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
+    return parser
+
+
+class ASGIHTTPServer:
+    """Dependency-free HTTP/1.1 runner for this loopback-only ASGI application."""
+
+    def __init__(self, app: Any, host: str, port: int) -> None:
+        self.app = app
+        self.host = host
+        self.port = port
+        self._server: asyncio.Server | None = None
+        self._lifespan_receive: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        self._lifespan_send: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        self._lifespan_task: asyncio.Task[None] | None = None
+
+    async def _run_lifespan(self) -> None:
+        async def receive() -> dict[str, Any]:
+            return await self._lifespan_receive.get()
+
+        async def send(message: dict[str, Any]) -> None:
+            await self._lifespan_send.put(message)
+
+        await self.app(
+            {"type": "lifespan", "asgi": {"version": "3.0", "spec_version": "2.0"}},
+            receive,
+            send,
+        )
+
+    async def _lifespan_transition(self, event: str) -> None:
+        await self._lifespan_receive.put({"type": f"lifespan.{event}"})
+        message = await self._lifespan_send.get()
+        message_type = message.get("type")
+        if message_type == f"lifespan.{event}.failed":
+            raise RuntimeError(
+                message.get("message") or f"ASGI lifespan {event} failed"
+            )
+        if message_type != f"lifespan.{event}.complete":
+            raise RuntimeError(f"unexpected ASGI lifespan response: {message_type!r}")
+
+    async def start(self) -> None:
+        if self._lifespan_task is None:
+            self._lifespan_task = asyncio.create_task(self._run_lifespan())
+            await self._lifespan_transition("startup")
+        self._server = await asyncio.start_server(
+            self._handle_connection,
+            self.host,
+            self.port,
+            limit=_HEADER_LIMIT,
+        )
+
+    async def serve_forever(self) -> None:
+        if self._server is None:
+            await self.start()
+        assert self._server is not None
+        async with self._server:
+            await self._server.serve_forever()
+
+    async def close(self) -> None:
+        if self._server is not None:
+            self._server.close()
+            await self._server.wait_closed()
+        if self._lifespan_task is not None:
+            await self._lifespan_transition("shutdown")
+            await self._lifespan_task
+            self._lifespan_task = None
+
+    async def _handle_connection(
+        self,
+        reader: asyncio.StreamReader,
+        writer: asyncio.StreamWriter,
+    ) -> None:
+        response_started = False
+        try:
+            try:
+                header_block = await reader.readuntil(b"\r\n\r\n")
+            except (asyncio.IncompleteReadError, asyncio.LimitOverrunError):
+                await self._plain_error(writer, 400)
+                return
+            lines = header_block[:-4].split(b"\r\n")
+            if not lines:
+                await self._plain_error(writer, 400)
+                return
+            try:
+                method_bytes, target_bytes, version_bytes = lines[0].split(b" ", 2)
+                method = method_bytes.decode("ascii").upper()
+                target = target_bytes.decode("ascii")
+                version = version_bytes.decode("ascii")
+            except (ValueError, UnicodeDecodeError):
+                await self._plain_error(writer, 400)
+                return
+            if version != "HTTP/1.1" or not target.startswith("/"):
+                await self._plain_error(writer, 400)
+                return
+
+            headers: list[tuple[bytes, bytes]] = []
+            for line in lines[1:]:
+                if b":" not in line:
+                    await self._plain_error(writer, 400)
+                    return
+                name, value = line.split(b":", 1)
+                name = name.strip().lower()
+                if not name or any(byte <= 32 or byte >= 127 for byte in name):
+                    await self._plain_error(writer, 400)
+                    return
+                headers.append((name, value.strip()))
+
+            transfer_encoding = [
+                value for name, value in headers if name == b"transfer-encoding"
+            ]
+            if transfer_encoding:
+                await self._plain_error(writer, 501)
+                return
+            content_lengths = [
+                value for name, value in headers if name == b"content-length"
+            ]
+            if len(content_lengths) > 1:
+                await self._plain_error(writer, 400)
+                return
+            try:
+                remaining = int(content_lengths[0]) if content_lengths else 0
+            except ValueError:
+                await self._plain_error(writer, 400)
+                return
+            if remaining < 0:
+                await self._plain_error(writer, 400)
+                return
+
+            parsed = urlsplit(target)
+            if parsed.scheme or parsed.netloc:
+                await self._plain_error(writer, 400)
+                return
+            peer = writer.get_extra_info("peername") or ("", 0)
+            local = writer.get_extra_info("sockname") or (self.host, self.port)
+            scope = {
+                "type": "http",
+                "asgi": {"version": "3.0", "spec_version": "2.3"},
+                "http_version": "1.1",
+                "method": method,
+                "scheme": "http",
+                "path": parsed.path,
+                "raw_path": parsed.path.encode("ascii", "surrogateescape"),
+                "query_string": parsed.query.encode("ascii", "surrogateescape"),
+                "root_path": "",
+                "headers": headers,
+                "client": (str(peer[0]), int(peer[1])),
+                "server": (str(local[0]), int(local[1])),
+                "state": {},
+            }
+            disconnected = False
+            response_chunked = False
+            head_only = method == "HEAD"
+
+            async def receive() -> dict[str, Any]:
+                nonlocal remaining, disconnected
+                if remaining:
+                    chunk = await reader.readexactly(min(_BODY_CHUNK, remaining))
+                    remaining -= len(chunk)
+                    return {
+                        "type": "http.request",
+                        "body": chunk,
+                        "more_body": remaining > 0,
+                    }
+                if not disconnected:
+                    disconnected = True
+                    return {"type": "http.request", "body": b"", "more_body": False}
+                await reader.read(1)
+                return {"type": "http.disconnect"}
+
+            async def send(message: dict[str, Any]) -> None:
+                nonlocal response_started, response_chunked
+                message_type = message.get("type")
+                if message_type == "http.response.start":
+                    if response_started:
+                        raise RuntimeError("duplicate ASGI response start")
+                    response_started = True
+                    status = int(message["status"])
+                    response_headers = list(message.get("headers", ()))
+                    lower_names = {name.lower() for name, _ in response_headers}
+                    body_allowed = (
+                        method != "HEAD" and status not in {204, 304} and status >= 200
+                    )
+                    response_chunked = (
+                        body_allowed and b"content-length" not in lower_names
+                    )
+                    if response_chunked:
+                        response_headers.append((b"transfer-encoding", b"chunked"))
+                    if b"connection" not in lower_names:
+                        response_headers.append((b"connection", b"close"))
+                    reason = (
+                        HTTPStatus(status).phrase
+                        if status in HTTPStatus._value2member_map_
+                        else ""
+                    )
+                    writer.write(f"HTTP/1.1 {status} {reason}\r\n".encode("ascii"))
+                    for name, value in response_headers:
+                        writer.write(name + b": " + value + b"\r\n")
+                    writer.write(b"\r\n")
+                    await writer.drain()
+                    return
+                if message_type != "http.response.body" or not response_started:
+                    raise RuntimeError("invalid ASGI response message")
+                body = message.get("body", b"")
+                more_body = bool(message.get("more_body", False))
+                if body and not head_only:
+                    if response_chunked:
+                        writer.write(
+                            f"{len(body):x}\r\n".encode("ascii") + body + b"\r\n"
+                        )
+                    else:
+                        writer.write(body)
+                    await writer.drain()
+                if not more_body and response_chunked and not head_only:
+                    writer.write(b"0\r\n\r\n")
+                    await writer.drain()
+
+            try:
+                await self.app(scope, receive, send)
+            except (BrokenPipeError, ConnectionResetError):
+                return
+            except Exception:
+                if not response_started:
+                    await self._plain_error(writer, 500)
+                return
+        finally:
+            writer.close()
+            with contextlib.suppress(BrokenPipeError, ConnectionResetError):
+                await writer.wait_closed()
+
+    @staticmethod
+    async def _plain_error(writer: asyncio.StreamWriter, status: int) -> None:
+        reason = HTTPStatus(status).phrase
+        body = f"{status} {reason}\n".encode("ascii")
+        writer.write(
+            f"HTTP/1.1 {status} {reason}\r\n".encode("ascii")
+            + b"content-type: text/plain; charset=utf-8\r\n"
+            + f"content-length: {len(body)}\r\n".encode("ascii")
+            + b"connection: close\r\n\r\n"
+            + body
+        )
+        await writer.drain()
+
+
+def _unused_loopback_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        return int(probe.getsockname()[1])
+
+
+def _build_web() -> None:
+    subprocess.run(
+        ["npm", "--prefix", str(PROJECT_ROOT / "web"), "run", "build"],
+        check=True,
+    )
+
+
+async def _run_production(args: argparse.Namespace) -> None:
+    dist = PROJECT_ROOT / "web" / "dist"
+    if not (dist / "index.html").is_file() and not args.skip_web_build:
+        _build_web()
+    public_authority = _authority(args.host, args.port)
+    allowed_hosts = {*loopback_hosts(args.port), public_authority.lower()}
+    allowed_origins = {*loopback_origins(args.port), _origin(args.host, args.port)}
+    app = create_app(
+        args.workspace,
+        public_port=args.port,
+        allowed_hosts=allowed_hosts,
+        allowed_origins=allowed_origins,
+        static_dir=dist,
+    )
+    server = ASGIHTTPServer(app, args.host, args.port)
+    print(f"Synthetic Table Studio: {_origin(args.host, args.port)}", flush=True)
+    try:
+        await server.serve_forever()
+    finally:
+        await server.close()
+        app.state.repository.close()
+
+
+async def _run_dev(args: argparse.Namespace) -> None:
+    backend_port = _unused_loopback_port()
+    public_authority = _authority(args.host, args.port)
+    app = create_app(
+        args.workspace,
+        public_port=args.port,
+        allowed_hosts={*loopback_hosts(args.port), public_authority.lower()},
+        allowed_origins={*loopback_origins(args.port), _origin(args.host, args.port)},
+    )
+    server = ASGIHTTPServer(app, "127.0.0.1", backend_port)
+    await server.start()
+
+    web_root = PROJECT_ROOT / "web"
+    config_descriptor, config_name = tempfile.mkstemp(prefix="sts-vite-", suffix=".mjs")
+    os.close(config_descriptor)
+    generated_config = Path(config_name)
+    base_config_url = (web_root / "vite.config.ts").resolve().as_uri()
+    generated_config.write_text(
+        "\n".join(
+            (
+                f"import baseConfig from {json.dumps(base_config_url)};",
+                "export default {",
+                "  ...baseConfig,",
+                "  server: {",
+                "    ...(baseConfig.server ?? {}),",
+                f"    host: {json.dumps(args.host)},",
+                f"    port: {args.port},",
+                "    strictPort: true,",
+                f"    allowedHosts: [{json.dumps(args.host)}],",
+                "    proxy: { '/api': {",
+                f"      target: 'http://127.0.0.1:{backend_port}',",
+                "      changeOrigin: false",
+                "    } }",
+                "  }",
+                "};",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    command = [
+        "npm",
+        "--prefix",
+        str(web_root),
+        "run",
+        "dev",
+        "--",
+        "--config",
+        str(generated_config),
+    ]
+    print(f"Synthetic Table Studio (Vite): {_origin(args.host, args.port)}", flush=True)
+    process: asyncio.subprocess.Process | None = None
+    try:
+        process = await asyncio.create_subprocess_exec(*command)
+        exit_code = await process.wait()
+        if exit_code:
+            raise SystemExit(exit_code)
+    finally:
+        generated_config.unlink(missing_ok=True)
+        if process is not None and process.returncode is None:
+            process.terminate()
+            await process.wait()
+        await server.close()
+        app.state.repository.close()
+
+
+def _interrupt_on_termination(_signal_number: int, _frame: Any) -> None:
+    raise KeyboardInterrupt
+
+
+def main() -> None:
+    args = _parser().parse_args()
+    try:
+        validate_bind_host(
+            args.host,
+            unsafe_allow_non_loopback=args.unsafe_allow_non_loopback,
+        )
+        if not 1 <= args.port <= 65535:
+            raise ValueError("port must be between 1 and 65535")
+    except ValueError as error:
+        _parser().error(str(error))
+    signal.signal(signal.SIGTERM, _interrupt_on_termination)
+    try:
+        asyncio.run(_run_dev(args) if args.dev else _run_production(args))
+    except KeyboardInterrupt:
+        pass
+
+
+if __name__ == "__main__":
+    main()

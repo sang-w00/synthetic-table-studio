@@ -1,0 +1,30 @@
+# Local data and runtime state
+var/
+.omx/
+*.csv
+*.xlsx
+*.xls
+
+# Python
+.venv/
+**/.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+web/node_modules/
+web/dist/
+
+# Probe and build transients
+probes/workspaces/
+probes/tmp/
+build/tmp/
+*.part
+
+# Editor and OS
+.DS_Store
+.idea/
+.vscode/

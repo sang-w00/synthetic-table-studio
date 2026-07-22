@@ -1,0 +1,20 @@
+[project]
+name = "sts-dpmm-worker"
+version = "0.1.0"
+description = "Pinned dpmm worker environment for Synthetic Table Studio"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "dpmm==0.1.9",
+    "numpy==1.26.4",
+    "pandas==2.1.0",
+]
+
+[build-system]
+requires = ["hatchling==1.29.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dpmm_worker"]
+
+[tool.uv]
+package = true

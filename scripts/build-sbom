@@ -1,0 +1,309 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = []
+# ///
+"""Build deterministic lockfile-derived dependency, license, and integrity inventories."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+from pathlib import Path
+import sys
+import tomllib
+from typing import Any
+
+SCHEMA_VERSION = "1.0"
+EXCLUDED_PARTS = {".git", ".venv", "build", "node_modules"}
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def lockfiles(root: Path) -> list[Path]:
+    found: list[Path] = []
+    for filename in ("uv.lock", "package-lock.json"):
+        for path in root.rglob(filename):
+            if not EXCLUDED_PARTS.intersection(path.relative_to(root).parts):
+                found.append(path)
+    return sorted(found, key=lambda path: path.relative_to(root).as_posix())
+
+
+def relative(root: Path, path: Path) -> str:
+    return path.relative_to(root).as_posix()
+
+
+def dependency_names(dependencies: Any) -> list[str]:
+    if isinstance(dependencies, dict):
+        return sorted(str(name) for name in dependencies)
+    if not isinstance(dependencies, list):
+        return []
+    names = {
+        str(dependency["name"])
+        for dependency in dependencies
+        if isinstance(dependency, dict) and "name" in dependency
+    }
+    return sorted(names)
+
+
+def uv_source(package: dict[str, Any]) -> dict[str, Any]:
+    source = package.get("source")
+    return source if isinstance(source, dict) else {}
+
+
+def uv_locator(package: dict[str, Any]) -> str:
+    name = str(package["name"])
+    version = package.get("version")
+    return f"pkg:pypi/{name}@{version}" if version is not None else f"python:{name}"
+
+
+def npm_name(package_path: str, package: dict[str, Any]) -> str:
+    declared = package.get("name")
+    if isinstance(declared, str) and declared:
+        return declared
+    marker = "node_modules/"
+    return package_path.rsplit(marker, 1)[-1]
+
+
+def npm_locator(package_path: str, package: dict[str, Any]) -> str:
+    name = npm_name(package_path, package)
+    version = package.get("version")
+    return f"pkg:npm/{name}@{version}" if version is not None else f"npm:{package_path}"
+
+
+def hash_record(value: Any) -> dict[str, str | None]:
+    if not isinstance(value, str) or not value:
+        return {"algorithm": None, "digest": None, "locked_hash": ""}
+    algorithm, separator, digest = value.partition(":")
+    if separator and algorithm and digest:
+        return {"algorithm": algorithm, "digest": digest, "locked_hash": value}
+    return {"algorithm": None, "digest": None, "locked_hash": value}
+
+
+def uv_artifacts(package: dict[str, Any]) -> list[dict[str, Any]]:
+    artifacts: list[dict[str, Any]] = []
+    sdist = package.get("sdist")
+    if isinstance(sdist, dict):
+        artifacts.append({"kind": "sdist", **artifact_record(sdist)})
+    wheels = package.get("wheels")
+    if isinstance(wheels, list):
+        for wheel in wheels:
+            if isinstance(wheel, dict):
+                artifacts.append({"kind": "wheel", **artifact_record(wheel)})
+    return sorted(artifacts, key=lambda item: (str(item["kind"]), str(item.get("url", ""))))
+
+
+def artifact_record(artifact: dict[str, Any]) -> dict[str, Any]:
+    record: dict[str, Any] = {
+        "url": artifact.get("url"),
+        "size": artifact.get("size"),
+        **hash_record(artifact.get("hash")),
+    }
+    return record
+
+
+def blank_inventory(kind: str) -> dict[str, Any]:
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "inventory_kind": kind,
+        "generated_by": "scripts/build-sbom",
+        "source_of_truth": "repository lockfiles",
+        "lockfiles": [],
+        "packages": [],
+    }
+
+
+def add_uv_lock(
+    root: Path,
+    path: Path,
+    dependencies: dict[str, Any],
+    licenses: dict[str, Any],
+    integrity: dict[str, Any],
+) -> None:
+    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    lock_path = relative(root, path)
+    lock = {
+        "ecosystem": "python-uv",
+        "path": lock_path,
+        "sha256": sha256_file(path),
+        "lock_version": data.get("version"),
+        "lock_revision": data.get("revision"),
+        "requires_python": data.get("requires-python"),
+    }
+    for inventory in (dependencies, licenses, integrity):
+        inventory["lockfiles"].append(lock)
+
+    packages = data.get("package", [])
+    if not isinstance(packages, list):
+        raise ValueError(f"{lock_path}: package must be an array")
+    for package in packages:
+        if not isinstance(package, dict) or "name" not in package:
+            raise ValueError(f"{lock_path}: malformed package entry")
+        base = {
+            "ecosystem": "python-uv",
+            "lockfile": lock_path,
+            "locator": uv_locator(package),
+            "name": str(package["name"]),
+            "version": package.get("version"),
+        }
+        dependencies["packages"].append(
+            {
+                **base,
+                "dependencies": dependency_names(package.get("dependencies")),
+                "source": uv_source(package),
+            }
+        )
+        licenses["packages"].append(
+            {
+                **base,
+                "declared_license": None,
+                "license_status": "not_recorded_in_uv_lock",
+            }
+        )
+        artifacts = uv_artifacts(package)
+        integrity["packages"].append(
+            {
+                **base,
+                "artifacts": artifacts,
+                "integrity_status": (
+                    "recorded" if artifacts and all(item["locked_hash"] for item in artifacts) else "not_recorded"
+                ),
+                "source": uv_source(package),
+            }
+        )
+
+
+def add_npm_lock(
+    root: Path,
+    path: Path,
+    dependencies: dict[str, Any],
+    licenses: dict[str, Any],
+    integrity: dict[str, Any],
+) -> None:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    lock_path = relative(root, path)
+    lock = {
+        "ecosystem": "npm",
+        "path": lock_path,
+        "sha256": sha256_file(path),
+        "lockfile_version": data.get("lockfileVersion"),
+    }
+    for inventory in (dependencies, licenses, integrity):
+        inventory["lockfiles"].append(lock)
+
+    packages = data.get("packages")
+    if not isinstance(packages, dict):
+        raise ValueError(f"{lock_path}: npm lock must contain a packages object")
+    for package_path in sorted(packages):
+        package = packages[package_path]
+        if not isinstance(package, dict):
+            continue
+        name = npm_name(package_path, package)
+        base = {
+            "ecosystem": "npm",
+            "lockfile": lock_path,
+            "locator": npm_locator(package_path, package),
+            "package_path": package_path or ".",
+            "name": name,
+            "version": package.get("version"),
+        }
+        combined_dependencies: dict[str, Any] = {}
+        for key in ("dependencies", "optionalDependencies", "peerDependencies"):
+            value = package.get(key)
+            if isinstance(value, dict):
+                combined_dependencies.update(value)
+        dependencies["packages"].append(
+            {
+                **base,
+                "dependencies": sorted(combined_dependencies),
+                "dev": bool(package.get("dev", False)),
+                "optional": bool(package.get("optional", False)),
+                "resolved": package.get("resolved"),
+            }
+        )
+        declared_license = package.get("license")
+        licenses["packages"].append(
+            {
+                **base,
+                "declared_license": declared_license,
+                "license_status": "declared" if declared_license is not None else "not_recorded_in_npm_lock",
+            }
+        )
+        locked_integrity = package.get("integrity")
+        integrity["packages"].append(
+            {
+                **base,
+                "integrity": locked_integrity,
+                "integrity_status": "recorded" if locked_integrity else "not_recorded",
+                "resolved": package.get("resolved"),
+            }
+        )
+
+
+def sort_inventory(inventory: dict[str, Any]) -> None:
+    inventory["lockfiles"].sort(key=lambda item: (item["path"], item["ecosystem"]))
+    inventory["packages"].sort(
+        key=lambda item: (
+            item["lockfile"],
+            item["ecosystem"],
+            item.get("package_path", ""),
+            item["name"],
+            str(item.get("version", "")),
+        )
+    )
+
+
+def atomic_json(path: Path, value: dict[str, Any]) -> None:
+    payload = (json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False) + "\n").encode("utf-8")
+    temporary = path.with_suffix(path.suffix + ".part")
+    with temporary.open("wb") as handle:
+        handle.write(payload)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(temporary, path)
+
+
+def main() -> int:
+    root = Path(__file__).resolve().parent.parent
+    locks = lockfiles(root)
+    if not locks:
+        print("no uv.lock or package-lock.json files found", file=sys.stderr)
+        return 1
+
+    dependencies = blank_inventory("dependencies")
+    licenses = blank_inventory("licenses")
+    licenses["license_evidence_policy"] = (
+        "Only declarations stored in a lockfile are reported; missing declarations are not inferred."
+    )
+    integrity = blank_inventory("integrity")
+    integrity["integrity_evidence_policy"] = (
+        "Hashes and integrity strings are copied exactly from lockfiles; they attest locked artifacts, not installed files."
+    )
+
+    for path in locks:
+        if path.name == "uv.lock":
+            add_uv_lock(root, path, dependencies, licenses, integrity)
+        else:
+            add_npm_lock(root, path, dependencies, licenses, integrity)
+
+    output_dir = root / "build" / "sbom"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for name, inventory in (
+        ("dependencies.json", dependencies),
+        ("licenses.json", licenses),
+        ("integrity.json", integrity),
+    ):
+        sort_inventory(inventory)
+        atomic_json(output_dir / name, inventory)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

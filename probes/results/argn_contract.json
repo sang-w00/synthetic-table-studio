@@ -1,0 +1,2004 @@
+{
+  "completed_at": "2026-07-22T14:46:39.553314+00:00",
+  "config": {
+    "child_timeout_seconds": 3600,
+    "clone_process_counts": [
+      1,
+      2,
+      4
+    ],
+    "fixture_rows": 10000,
+    "generation_batch_size": 1000,
+    "generation_rows": 10000,
+    "master_seed": 290797,
+    "max_epochs": 2,
+    "model": "MOSTLY_AI/Small",
+    "run_staircase": false,
+    "staircase_fit_rows": [
+      10000,
+      50000,
+      250000
+    ],
+    "staircase_generation_rows": [
+      10000,
+      100000,
+      1000000
+    ],
+    "train_device": "cpu"
+  },
+  "contract": {
+    "bounded_python_objects": {
+      "claim": "no probe-created DataFrame exceeded the bounded training fixture or one generation candidate",
+      "maximum_generation_candidate_dataframe_deep_bytes": 750081,
+      "maximum_generation_candidate_dataframe_rows": 10000,
+      "maximum_training_dataframe_deep_bytes": 448780,
+      "maximum_training_dataframe_rows": 10000
+    },
+    "checkpoint": {
+      "bytes": 602199,
+      "file_count": 12,
+      "files": [
+        {
+          "path": "ModelStore/model-data/lr-scheduler.pt",
+          "sha256": "ff7c8d5c25c19a0d50f0ca57adf2dca9d037af7db7180943f6378c8ec707fac9",
+          "size_bytes": 1803
+        },
+        {
+          "path": "ModelStore/model-data/model-configs.json",
+          "sha256": "83cb1d7aca8f4ad69f11c02df98c8d4d7772e8af32000da63d1afa7912e46a6d",
+          "size_bytes": 1544
+        },
+        {
+          "path": "ModelStore/model-data/model-weights.pt",
+          "sha256": "ef8421c65c2a3f9497ec5b5433f6975aac18eb8782baf6dea675846e6fe46f85",
+          "size_bytes": 106713
+        },
+        {
+          "path": "ModelStore/model-data/optimizer.pt",
+          "sha256": "abc5ca7383067c2637d59a8d94875be7f26fd0370a0bbbb762f1e11c3feea47c",
+          "size_bytes": 212235
+        },
+        {
+          "path": "ModelStore/model-data/progress-messages.csv",
+          "sha256": "a5a0c8c58df73a67a65b468c1644631afa1bd89b133eb88bdb9804c4271364a7",
+          "size_bytes": 188
+        },
+        {
+          "path": "ModelStore/tgt-stats/stats.json",
+          "sha256": "d9e2b9c543e8dbfb3fff1109a25537dd22ca434de58d92d1a303d3e5274b8dc2",
+          "size_bytes": 8191
+        },
+        {
+          "path": "OriginalData/encoded-data/part.000000-trn.parquet",
+          "sha256": "7c4e8a13a3c54a9a7fd72e186540e8ab48639cc3eeee5686d8a3dca45a9fa88e",
+          "size_bytes": 61856
+        },
+        {
+          "path": "OriginalData/encoded-data/part.000000-val.parquet",
+          "sha256": "4c3bd03debcb94e37febea762b8cd73b50c24ec1976258b99508fc5d56e1b0b4",
+          "size_bytes": 15827
+        },
+        {
+          "path": "OriginalData/tgt-data/part.000000-trn.parquet",
+          "sha256": "c2166713d3ccec4d0b0df3ad5e94ed06a3d717c96b6008b98312912535db23dc",
+          "size_bytes": 172195
+        },
+        {
+          "path": "OriginalData/tgt-data/part.000000-val.parquet",
+          "sha256": "06081070a20f2b85817586f90c85afa2135e1d1498a609f76ff155b444fe8a69",
+          "size_bytes": 21419
+        },
+        {
+          "path": "OriginalData/tgt-meta/encoding-types.json",
+          "sha256": "798c97b76e4bfc6adde06c47c821ed12af4204622fc2f5606688569e9b7cd3ff",
+          "size_bytes": 226
+        },
+        {
+          "path": "OriginalData/tgt-meta/keys.json",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+          "size_bytes": 2
+        }
+      ],
+      "sha256": "31c3e0b9ddf59d7f4cea8c31780d64a2c635ad5704d8db58a53dad7be054499f"
+    },
+    "encoded_data": {
+      "bytes": 0,
+      "file_count": 0
+    },
+    "fit_process": {
+      "completed_at": "2026-07-22T14:46:24.536172+00:00",
+      "evidence": {
+        "checkpoint": {
+          "bytes": 602199,
+          "file_count": 12,
+          "files": [
+            {
+              "path": "ModelStore/model-data/lr-scheduler.pt",
+              "sha256": "ff7c8d5c25c19a0d50f0ca57adf2dca9d037af7db7180943f6378c8ec707fac9",
+              "size_bytes": 1803
+            },
+            {
+              "path": "ModelStore/model-data/model-configs.json",
+              "sha256": "83cb1d7aca8f4ad69f11c02df98c8d4d7772e8af32000da63d1afa7912e46a6d",
+              "size_bytes": 1544
+            },
+            {
+              "path": "ModelStore/model-data/model-weights.pt",
+              "sha256": "ef8421c65c2a3f9497ec5b5433f6975aac18eb8782baf6dea675846e6fe46f85",
+              "size_bytes": 106713
+            },
+            {
+              "path": "ModelStore/model-data/optimizer.pt",
+              "sha256": "abc5ca7383067c2637d59a8d94875be7f26fd0370a0bbbb762f1e11c3feea47c",
+              "size_bytes": 212235
+            },
+            {
+              "path": "ModelStore/model-data/progress-messages.csv",
+              "sha256": "a5a0c8c58df73a67a65b468c1644631afa1bd89b133eb88bdb9804c4271364a7",
+              "size_bytes": 188
+            },
+            {
+              "path": "ModelStore/tgt-stats/stats.json",
+              "sha256": "d9e2b9c543e8dbfb3fff1109a25537dd22ca434de58d92d1a303d3e5274b8dc2",
+              "size_bytes": 8191
+            },
+            {
+              "path": "OriginalData/encoded-data/part.000000-trn.parquet",
+              "sha256": "7c4e8a13a3c54a9a7fd72e186540e8ab48639cc3eeee5686d8a3dca45a9fa88e",
+              "size_bytes": 61856
+            },
+            {
+              "path": "OriginalData/encoded-data/part.000000-val.parquet",
+              "sha256": "4c3bd03debcb94e37febea762b8cd73b50c24ec1976258b99508fc5d56e1b0b4",
+              "size_bytes": 15827
+            },
+            {
+              "path": "OriginalData/tgt-data/part.000000-trn.parquet",
+              "sha256": "c2166713d3ccec4d0b0df3ad5e94ed06a3d717c96b6008b98312912535db23dc",
+              "size_bytes": 172195
+            },
+            {
+              "path": "OriginalData/tgt-data/part.000000-val.parquet",
+              "sha256": "06081070a20f2b85817586f90c85afa2135e1d1498a609f76ff155b444fe8a69",
+              "size_bytes": 21419
+            },
+            {
+              "path": "OriginalData/tgt-meta/encoding-types.json",
+              "sha256": "798c97b76e4bfc6adde06c47c821ed12af4204622fc2f5606688569e9b7cd3ff",
+              "size_bytes": 226
+            },
+            {
+              "path": "OriginalData/tgt-meta/keys.json",
+              "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+              "size_bytes": 2
+            }
+          ],
+          "sha256": "31c3e0b9ddf59d7f4cea8c31780d64a2c635ad5704d8db58a53dad7be054499f"
+        },
+        "encoded_data": {
+          "bytes": 0,
+          "file_count": 0
+        },
+        "fixture": {
+          "column_order": [
+            "age",
+            "income",
+            "segment",
+            "region",
+            "is_active",
+            "event_at"
+          ],
+          "columns": 6,
+          "deep_bytes": 448780,
+          "dtypes": {
+            "age": "Int64",
+            "event_at": "datetime64[ns]",
+            "income": "Float64",
+            "is_active": "boolean",
+            "region": "category",
+            "segment": "string"
+          },
+          "null_counts": {
+            "age": 322,
+            "event_at": 434,
+            "income": 526,
+            "is_active": 344,
+            "region": 232,
+            "segment": 270
+          },
+          "rows": 10000,
+          "sha256": "912181a7cecae67c3d22cd61f6ac68f3922e8272d39185bb837723b3a2c43200"
+        },
+        "maximum_materialized_python_dataframe": {
+          "deep_bytes": 448780,
+          "kind": "bounded_training_dataframe",
+          "rows": 10000
+        },
+        "model_store": {
+          "bytes": 330674,
+          "file_count": 6
+        },
+        "split_rows": {
+          "training": 9036,
+          "validation": 964
+        }
+      },
+      "exceptions": [],
+      "operation": "fit_checkpoint",
+      "parent_pid": 70801,
+      "pid": 70806,
+      "request": {
+        "fixture_rows": 10000,
+        "fixture_seed": 290797,
+        "model": "MOSTLY_AI/Small",
+        "train_device": "cpu"
+      },
+      "rss": {
+        "baseline_bytes": 26902528,
+        "peak_increase_bytes": 6262374400,
+        "peak_process_tree_rss_bytes": 6289276928
+      },
+      "schema_version": "1.0",
+      "stages": {
+        "analyze": {
+          "rss": {
+            "baseline_bytes": 526729216,
+            "peak_increase_bytes": 4887576576,
+            "peak_process_tree_rss_bytes": 5414305792
+          },
+          "status": "passed",
+          "wall_seconds": 5.536582332977559
+        },
+        "encode": {
+          "rss": {
+            "baseline_bytes": 5414273024,
+            "peak_increase_bytes": 877903872,
+            "peak_process_tree_rss_bytes": 6292176896
+          },
+          "status": "passed",
+          "wall_seconds": 2.8876576669863425
+        },
+        "split": {
+          "rss": {
+            "baseline_bytes": 517013504,
+            "peak_increase_bytes": 9453568,
+            "peak_process_tree_rss_bytes": 526467072
+          },
+          "status": "passed",
+          "wall_seconds": 0.05227129202103242
+        },
+        "train": {
+          "rss": {
+            "baseline_bytes": 6172475392,
+            "peak_increase_bytes": 0,
+            "peak_process_tree_rss_bytes": 6172475392
+          },
+          "status": "passed",
+          "wall_seconds": 3.526399708003737
+        }
+      },
+      "started_at": "2026-07-22T14:46:09.591322+00:00",
+      "status": "passed",
+      "supervisor": {
+        "observed_peak_process_tree_rss_bytes": 6470778880,
+        "process_exited_before_generation": true,
+        "return_code": 0,
+        "stderr_tail": "W0722 23:46:12.202000 70806 torch/distributed/elastic/multiprocessing/redirects.py:29] NOTE: Redirects are currently not supported in Windows or MacOs.\nW0722 23:46:15.064000 70881 torch/distributed/elastic/multiprocessing/redirects.py:29] NOTE: Redirects are currently not supported in Windows or MacOs.\nW0722 23:46:15.118000 70883 torch/distributed/elastic/multiprocessing/redirects.py:29] NOTE: Redirects are currently not supported in Windows or MacOs.\nW0722 23:46:15.137000 70882 torch/distributed/elastic/multiprocessing/redirects.py:29] NOTE: Redirects are currently not supported in Windows or MacOs.\nW0722 23:46:15.139000 70884 torch/distributed/elastic/multiprocessing/redirects.py:29] NOTE: Redirects are currently not supported in Windows or MacOs.\nW0722 23:46:15.140000 70885 torch/distributed/elastic/multiprocessing/redirects.py:29] NOTE: Redirects are currently not supported in Windows or MacOs.\nW0722 23:46:15.140000 70887 torch/distributed/elastic/multiprocessing/redirects.py:29] NOTE: Redirects are currently not supported in Windows or MacOs.\nW0722 23:46:17.784000 70907 torch/distributed/elastic/multiprocessing/redirects.py:29] NOTE: Redirects are currently not supported in Windows or MacOs.\nW0722 23:46:17.787000 70886 torch/distributed/elastic/multiprocessing/redirects.py:29] NOTE: Redirects are currently not supported in Windows or MacOs.\nW0722 23:46:17.791000 70888 torch/distributed/elastic/multiprocessing/redirects.py:29] NOTE: Redirects are currently not supported in Windows or MacOs.\nW0722 23:46:20.586000 70906 torch/distributed/elastic/multiprocessing/redirects.py:29] NOTE: Redirects are currently not supported in Windows or MacOs.\nW0722 23:46:20.586000 70890 torch/distributed/elastic/multiprocessing/redirects.py:29] NOTE: Redirects are currently not supported in Windows or MacOs.\nW0722 23:46:20.586000 70891 torch/distributed/elastic/multiprocessing/redirects.py:29] NOTE: Redirects are currently not supported in Windows or MacOs.\n",
+        "stdout_tail": "",
+        "timed_out": false,
+        "wall_seconds": 16.43266120797489
+      },
+      "wall_seconds": 14.944575917033944
+    },
+    "fixture": {
+      "column_order": [
+        "age",
+        "income",
+        "segment",
+        "region",
+        "is_active",
+        "event_at"
+      ],
+      "columns": 6,
+      "deep_bytes": 448780,
+      "dtypes": {
+        "age": "Int64",
+        "event_at": "datetime64[ns]",
+        "income": "Float64",
+        "is_active": "boolean",
+        "region": "category",
+        "segment": "string"
+      },
+      "null_counts": {
+        "age": 322,
+        "event_at": 434,
+        "income": 526,
+        "is_active": 344,
+        "region": 232,
+        "segment": 270
+      },
+      "rows": 10000,
+      "sha256": "912181a7cecae67c3d22cd61f6ac68f3922e8272d39185bb837723b3a2c43200"
+    },
+    "fresh_process_generations": {
+      "baseline": {
+        "checkpoint_checksum_after": {
+          "bytes": 602199,
+          "file_count": 12,
+          "files": [
+            {
+              "path": "ModelStore/model-data/lr-scheduler.pt",
+              "sha256": "ff7c8d5c25c19a0d50f0ca57adf2dca9d037af7db7180943f6378c8ec707fac9",
+              "size_bytes": 1803
+            },
+            {
+              "path": "ModelStore/model-data/model-configs.json",
+              "sha256": "83cb1d7aca8f4ad69f11c02df98c8d4d7772e8af32000da63d1afa7912e46a6d",
+              "size_bytes": 1544
+            },
+            {
+              "path": "ModelStore/model-data/model-weights.pt",
+              "sha256": "ef8421c65c2a3f9497ec5b5433f6975aac18eb8782baf6dea675846e6fe46f85",
+              "size_bytes": 106713
+            },
+            {
+              "path": "ModelStore/model-data/optimizer.pt",
+              "sha256": "abc5ca7383067c2637d59a8d94875be7f26fd0370a0bbbb762f1e11c3feea47c",
+              "size_bytes": 212235
+            },
+            {
+              "path": "ModelStore/model-data/progress-messages.csv",
+              "sha256": "a5a0c8c58df73a67a65b468c1644631afa1bd89b133eb88bdb9804c4271364a7",
+              "size_bytes": 188
+            },
+            {
+              "path": "ModelStore/tgt-stats/stats.json",
+              "sha256": "d9e2b9c543e8dbfb3fff1109a25537dd22ca434de58d92d1a303d3e5274b8dc2",
+              "size_bytes": 8191
+            },
+            {
+              "path": "OriginalData/encoded-data/part.000000-trn.parquet",
+              "sha256": "7c4e8a13a3c54a9a7fd72e186540e8ab48639cc3eeee5686d8a3dca45a9fa88e",
+              "size_bytes": 61856
+            },
+            {
+              "path": "OriginalData/encoded-data/part.000000-val.parquet",
+              "sha256": "4c3bd03debcb94e37febea762b8cd73b50c24ec1976258b99508fc5d56e1b0b4",
+              "size_bytes": 15827
+            },
+            {
+              "path": "OriginalData/tgt-data/part.000000-trn.parquet",
+              "sha256": "c2166713d3ccec4d0b0df3ad5e94ed06a3d717c96b6008b98312912535db23dc",
+              "size_bytes": 172195
+            },
+            {
+              "path": "OriginalData/tgt-data/part.000000-val.parquet",
+              "sha256": "06081070a20f2b85817586f90c85afa2135e1d1498a609f76ff155b444fe8a69",
+              "size_bytes": 21419
+            },
+            {
+              "path": "OriginalData/tgt-meta/encoding-types.json",
+              "sha256": "798c97b76e4bfc6adde06c47c821ed12af4204622fc2f5606688569e9b7cd3ff",
+              "size_bytes": 226
+            },
+            {
+              "path": "OriginalData/tgt-meta/keys.json",
+              "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+              "size_bytes": 2
+            }
+          ],
+          "sha256": "31c3e0b9ddf59d7f4cea8c31780d64a2c635ad5704d8db58a53dad7be054499f"
+        },
+        "checkpoint_checksum_before": {
+          "bytes": 602199,
+          "file_count": 12,
+          "files": [
+            {
+              "path": "ModelStore/model-data/lr-scheduler.pt",
+              "sha256": "ff7c8d5c25c19a0d50f0ca57adf2dca9d037af7db7180943f6378c8ec707fac9",
+              "size_bytes": 1803
+            },
+            {
+              "path": "ModelStore/model-data/model-configs.json",
+              "sha256": "83cb1d7aca8f4ad69f11c02df98c8d4d7772e8af32000da63d1afa7912e46a6d",
+              "size_bytes": 1544
+            },
+            {
+              "path": "ModelStore/model-data/model-weights.pt",
+              "sha256": "ef8421c65c2a3f9497ec5b5433f6975aac18eb8782baf6dea675846e6fe46f85",
+              "size_bytes": 106713
+            },
+            {
+              "path": "ModelStore/model-data/optimizer.pt",
+              "sha256": "abc5ca7383067c2637d59a8d94875be7f26fd0370a0bbbb762f1e11c3feea47c",
+              "size_bytes": 212235
+            },
+            {
+              "path": "ModelStore/model-data/progress-messages.csv",
+              "sha256": "a5a0c8c58df73a67a65b468c1644631afa1bd89b133eb88bdb9804c4271364a7",
+              "size_bytes": 188
+            },
+            {
+              "path": "ModelStore/tgt-stats/stats.json",
+              "sha256": "d9e2b9c543e8dbfb3fff1109a25537dd22ca434de58d92d1a303d3e5274b8dc2",
+              "size_bytes": 8191
+            },
+            {
+              "path": "OriginalData/encoded-data/part.000000-trn.parquet",
+              "sha256": "7c4e8a13a3c54a9a7fd72e186540e8ab48639cc3eeee5686d8a3dca45a9fa88e",
+              "size_bytes": 61856
+            },
+            {
+              "path": "OriginalData/encoded-data/part.000000-val.parquet",
+              "sha256": "4c3bd03debcb94e37febea762b8cd73b50c24ec1976258b99508fc5d56e1b0b4",
+              "size_bytes": 15827
+            },
+            {
+              "path": "OriginalData/tgt-data/part.000000-trn.parquet",
+              "sha256": "c2166713d3ccec4d0b0df3ad5e94ed06a3d717c96b6008b98312912535db23dc",
+              "size_bytes": 172195
+            },
+            {
+              "path": "OriginalData/tgt-data/part.000000-val.parquet",
+              "sha256": "06081070a20f2b85817586f90c85afa2135e1d1498a609f76ff155b444fe8a69",
+              "size_bytes": 21419
+            },
+            {
+              "path": "OriginalData/tgt-meta/encoding-types.json",
+              "sha256": "798c97b76e4bfc6adde06c47c821ed12af4204622fc2f5606688569e9b7cd3ff",
+              "size_bytes": 226
+            },
+            {
+              "path": "OriginalData/tgt-meta/keys.json",
+              "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+              "size_bytes": 2
+            }
+          ],
+          "sha256": "31c3e0b9ddf59d7f4cea8c31780d64a2c635ad5704d8db58a53dad7be054499f"
+        },
+        "checkpoint_files_unchanged": true,
+        "clone_workspace": "/var/folders/pm/2r0xv2ns2cs1xc9lkt06sz480000gn/T/sts-argn-contract-ujlbip9w/generation-clones/workspace-cpu-baseline",
+        "completed_at": "2026-07-22T14:46:28.562410+00:00",
+        "exceptions": [],
+        "operation": "fresh_process_generate",
+        "output": {
+          "arrow_schema": "age: int64\nincome: double\nsegment: large_string\nregion: large_string\nis_active: large_string\nevent_at: timestamp[ns]\n__index_level_0__: int64\n-- schema metadata --\npandas: '{\"index_columns\": [\"__index_level_0__\"], \"column_indexes\": [{\"na' + 1026",
+          "column_order": [
+            "age",
+            "income",
+            "segment",
+            "region",
+            "is_active",
+            "event_at",
+            "__index_level_0__"
+          ],
+          "columns": 7,
+          "content_sha256": "be8c9bb5c15bf3a3a47f1539d63455b561924c4b700de10172d476fd5e59094f",
+          "parquet": {
+            "bytes": 247838,
+            "file_count": 1,
+            "files": [
+              {
+                "path": "part.000000.000000.parquet",
+                "sha256": "501f11fcef862e67e5835d622f6afab8729f69ddfeeeaae8932a02b5d54b66b2",
+                "size_bytes": 247838
+              }
+            ],
+            "sha256": "b83bc9229a4ce031edfb80fd20534387318aa0ade9c7e10a4e1f5906025a2f50"
+          },
+          "python_candidate_dataframe_deep_bytes": 749681,
+          "python_candidate_dataframe_rows": 10000,
+          "rows": 10000,
+          "summary": {
+            "age": {
+              "dtype": "Int64",
+              "null_count": 361,
+              "null_rate": 0.0361,
+              "numeric": {
+                "max": 89.0,
+                "mean": 43.67382508558979,
+                "min": 18.0,
+                "std": 13.769117583634884
+              },
+              "unique_nonnull": 72
+            },
+            "event_at": {
+              "dtype": "datetime64[ns]",
+              "null_count": 483,
+              "null_rate": 0.0483,
+              "numeric": {
+                "max": 1.70401338e+18,
+                "mean": 1.657090927899548e+18,
+                "min": 1.60948662e+18,
+                "std": 2.7560380149060464e+16
+              },
+              "unique_nonnull": 9480
+            },
+            "income": {
+              "dtype": "Float64",
+              "null_count": 539,
+              "null_rate": 0.0539,
+              "numeric": {
+                "max": 365963.96,
+                "mean": 56050.56845576577,
+                "min": 7657.33,
+                "std": 36614.335257735
+              },
+              "unique_nonnull": 9456
+            },
+            "is_active": {
+              "dtype": "string",
+              "frequencies": {
+                "False": 0.3443,
+                "True": 0.6204,
+                "__NULL__": 0.0353
+              },
+              "null_count": 353,
+              "null_rate": 0.0353,
+              "unique_nonnull": 2
+            },
+            "region": {
+              "dtype": "string",
+              "frequencies": {
+                "__NULL__": 0.0243,
+                "central": 0.1918,
+                "east": 0.1981,
+                "north": 0.1972,
+                "south": 0.2026,
+                "west": 0.186
+              },
+              "null_count": 243,
+              "null_rate": 0.0243,
+              "unique_nonnull": 5
+            },
+            "segment": {
+              "dtype": "string",
+              "frequencies": {
+                "__NULL__": 0.0292,
+                "business": 0.2357,
+                "consumer": 0.2338,
+                "nonprofit": 0.2494,
+                "public": 0.2519
+              },
+              "null_count": 292,
+              "null_rate": 0.0292,
+              "unique_nonnull": 4
+            }
+          }
+        },
+        "parent_pid": 70801,
+        "pid": 71579,
+        "request": {
+          "batch_size": 1000,
+          "device": "cpu",
+          "sample_size": 10000,
+          "seed": 1079479087
+        },
+        "rss": {
+          "baseline_bytes": 506904576,
+          "peak_increase_bytes": 33964032,
+          "peak_process_tree_rss_bytes": 540868608
+        },
+        "schema_version": "1.0",
+        "source_dataframe_materialized": false,
+        "started_at": "2026-07-22T14:46:26.039302+00:00",
+        "status": "passed",
+        "supervisor": {
+          "label": "cpu-baseline",
+          "observed_peak_process_tree_rss_bytes": 559529984,
+          "return_code": 0,
+          "stderr_tail": "W0722 23:46:28.106000 71579 torch/distributed/elastic/multiprocessing/redirects.py:29] NOTE: Redirects are currently not supported in Windows or MacOs.\n",
+          "stdout_tail": "",
+          "timed_out": false,
+          "wall_seconds": 3.0514393750345334
+        },
+        "wall_seconds": 2.5229440000257455
+      },
+      "different_seed": {
+        "checkpoint_checksum_after": {
+          "bytes": 602199,
+          "file_count": 12,
+          "files": [
+            {
+              "path": "ModelStore/model-data/lr-scheduler.pt",
+              "sha256": "ff7c8d5c25c19a0d50f0ca57adf2dca9d037af7db7180943f6378c8ec707fac9",
+              "size_bytes": 1803
+            },
+            {
+              "path": "ModelStore/model-data/model-configs.json",
+              "sha256": "83cb1d7aca8f4ad69f11c02df98c8d4d7772e8af32000da63d1afa7912e46a6d",
+              "size_bytes": 1544
+            },
+            {
+              "path": "ModelStore/model-data/model-weights.pt",
+              "sha256": "ef8421c65c2a3f9497ec5b5433f6975aac18eb8782baf6dea675846e6fe46f85",
+              "size_bytes": 106713
+            },
+            {
+              "path": "ModelStore/model-data/optimizer.pt",
+              "sha256": "abc5ca7383067c2637d59a8d94875be7f26fd0370a0bbbb762f1e11c3feea47c",
+              "size_bytes": 212235
+            },
+            {
+              "path": "ModelStore/model-data/progress-messages.csv",
+              "sha256": "a5a0c8c58df73a67a65b468c1644631afa1bd89b133eb88bdb9804c4271364a7",
+              "size_bytes": 188
+            },
+            {
+              "path": "ModelStore/tgt-stats/stats.json",
+              "sha256": "d9e2b9c543e8dbfb3fff1109a25537dd22ca434de58d92d1a303d3e5274b8dc2",
+              "size_bytes": 8191
+            },
+            {
+              "path": "OriginalData/encoded-data/part.000000-trn.parquet",
+              "sha256": "7c4e8a13a3c54a9a7fd72e186540e8ab48639cc3eeee5686d8a3dca45a9fa88e",
+              "size_bytes": 61856
+            },
+            {
+              "path": "OriginalData/encoded-data/part.000000-val.parquet",
+              "sha256": "4c3bd03debcb94e37febea762b8cd73b50c24ec1976258b99508fc5d56e1b0b4",
+              "size_bytes": 15827
+            },
+            {
+              "path": "OriginalData/tgt-data/part.000000-trn.parquet",
+              "sha256": "c2166713d3ccec4d0b0df3ad5e94ed06a3d717c96b6008b98312912535db23dc",
+              "size_bytes": 172195
+            },
+            {
+              "path": "OriginalData/tgt-data/part.000000-val.parquet",
+              "sha256": "06081070a20f2b85817586f90c85afa2135e1d1498a609f76ff155b444fe8a69",
+              "size_bytes": 21419
+            },
+            {
+              "path": "OriginalData/tgt-meta/encoding-types.json",
+              "sha256": "798c97b76e4bfc6adde06c47c821ed12af4204622fc2f5606688569e9b7cd3ff",
+              "size_bytes": 226
+            },
+            {
+              "path": "OriginalData/tgt-meta/keys.json",
+              "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+              "size_bytes": 2
+            }
+          ],
+          "sha256": "31c3e0b9ddf59d7f4cea8c31780d64a2c635ad5704d8db58a53dad7be054499f"
+        },
+        "checkpoint_checksum_before": {
+          "bytes": 602199,
+          "file_count": 12,
+          "files": [
+            {
+              "path": "ModelStore/model-data/lr-scheduler.pt",
+              "sha256": "ff7c8d5c25c19a0d50f0ca57adf2dca9d037af7db7180943f6378c8ec707fac9",
+              "size_bytes": 1803
+            },
+            {
+              "path": "ModelStore/model-data/model-configs.json",
+              "sha256": "83cb1d7aca8f4ad69f11c02df98c8d4d7772e8af32000da63d1afa7912e46a6d",
+              "size_bytes": 1544
+            },
+            {
+              "path": "ModelStore/model-data/model-weights.pt",
+              "sha256": "ef8421c65c2a3f9497ec5b5433f6975aac18eb8782baf6dea675846e6fe46f85",
+              "size_bytes": 106713
+            },
+            {
+              "path": "ModelStore/model-data/optimizer.pt",
+              "sha256": "abc5ca7383067c2637d59a8d94875be7f26fd0370a0bbbb762f1e11c3feea47c",
+              "size_bytes": 212235
+            },
+            {
+              "path": "ModelStore/model-data/progress-messages.csv",
+              "sha256": "a5a0c8c58df73a67a65b468c1644631afa1bd89b133eb88bdb9804c4271364a7",
+              "size_bytes": 188
+            },
+            {
+              "path": "ModelStore/tgt-stats/stats.json",
+              "sha256": "d9e2b9c543e8dbfb3fff1109a25537dd22ca434de58d92d1a303d3e5274b8dc2",
+              "size_bytes": 8191
+            },
+            {
+              "path": "OriginalData/encoded-data/part.000000-trn.parquet",
+              "sha256": "7c4e8a13a3c54a9a7fd72e186540e8ab48639cc3eeee5686d8a3dca45a9fa88e",
+              "size_bytes": 61856
+            },
+            {
+              "path": "OriginalData/encoded-data/part.000000-val.parquet",
+              "sha256": "4c3bd03debcb94e37febea762b8cd73b50c24ec1976258b99508fc5d56e1b0b4",
+              "size_bytes": 15827
+            },
+            {
+              "path": "OriginalData/tgt-data/part.000000-trn.parquet",
+              "sha256": "c2166713d3ccec4d0b0df3ad5e94ed06a3d717c96b6008b98312912535db23dc",
+              "size_bytes": 172195
+            },
+            {
+              "path": "OriginalData/tgt-data/part.000000-val.parquet",
+              "sha256": "06081070a20f2b85817586f90c85afa2135e1d1498a609f76ff155b444fe8a69",
+              "size_bytes": 21419
+            },
+            {
+              "path": "OriginalData/tgt-meta/encoding-types.json",
+              "sha256": "798c97b76e4bfc6adde06c47c821ed12af4204622fc2f5606688569e9b7cd3ff",
+              "size_bytes": 226
+            },
+            {
+              "path": "OriginalData/tgt-meta/keys.json",
+              "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+              "size_bytes": 2
+            }
+          ],
+          "sha256": "31c3e0b9ddf59d7f4cea8c31780d64a2c635ad5704d8db58a53dad7be054499f"
+        },
+        "checkpoint_files_unchanged": true,
+        "clone_workspace": "/var/folders/pm/2r0xv2ns2cs1xc9lkt06sz480000gn/T/sts-argn-contract-ujlbip9w/generation-clones/workspace-cpu-different-seed",
+        "completed_at": "2026-07-22T14:46:34.952421+00:00",
+        "exceptions": [],
+        "operation": "fresh_process_generate",
+        "output": {
+          "arrow_schema": "age: int64\nincome: double\nsegment: large_string\nregion: large_string\nis_active: large_string\nevent_at: timestamp[ns]\n__index_level_0__: int64\n-- schema metadata --\npandas: '{\"index_columns\": [\"__index_level_0__\"], \"column_indexes\": [{\"na' + 1026",
+          "column_order": [
+            "age",
+            "income",
+            "segment",
+            "region",
+            "is_active",
+            "event_at",
+            "__index_level_0__"
+          ],
+          "columns": 7,
+          "content_sha256": "738aa495a385199bcebf9424bc587fc1fc32ff7ca4b5f3f8a2174e36035f238b",
+          "parquet": {
+            "bytes": 247924,
+            "file_count": 1,
+            "files": [
+              {
+                "path": "part.000000.000000.parquet",
+                "sha256": "095a7a41b1903cf0d3117ab324d012f51c623b66404212ace4a9efe23c81fbc9",
+                "size_bytes": 247924
+              }
+            ],
+            "sha256": "140e7efc9c047d829ce2acf3ad03e1d8fee022f4e87765a2a1b0348fa229e8b6"
+          },
+          "python_candidate_dataframe_deep_bytes": 749863,
+          "python_candidate_dataframe_rows": 10000,
+          "rows": 10000,
+          "summary": {
+            "age": {
+              "dtype": "Int64",
+              "null_count": 329,
+              "null_rate": 0.0329,
+              "numeric": {
+                "max": 89.0,
+                "mean": 43.41929479888326,
+                "min": 18.0,
+                "std": 13.82133645084326
+              },
+              "unique_nonnull": 72
+            },
+            "event_at": {
+              "dtype": "datetime64[ns]",
+              "null_count": 478,
+              "null_rate": 0.0478,
+              "numeric": {
+                "max": 1.70401338e+18,
+                "mean": 1.656698673194707e+18,
+                "min": 1.60948662e+18,
+                "std": 2.7707560143971256e+16
+              },
+              "unique_nonnull": 9484
+            },
+            "income": {
+              "dtype": "Float64",
+              "null_count": 537,
+              "null_rate": 0.0537,
+              "numeric": {
+                "max": 365308.68,
+                "mean": 56562.16647046392,
+                "min": 7614.7,
+                "std": 37374.8772931053
+              },
+              "unique_nonnull": 9454
+            },
+            "is_active": {
+              "dtype": "string",
+              "frequencies": {
+                "False": 0.3433,
+                "True": 0.6206,
+                "__NULL__": 0.0361
+              },
+              "null_count": 361,
+              "null_rate": 0.0361,
+              "unique_nonnull": 2
+            },
+            "region": {
+              "dtype": "string",
+              "frequencies": {
+                "__NULL__": 0.0226,
+                "central": 0.1914,
+                "east": 0.1933,
+                "north": 0.2051,
+                "south": 0.1952,
+                "west": 0.1924
+              },
+              "null_count": 226,
+              "null_rate": 0.0226,
+              "unique_nonnull": 5
+            },
+            "segment": {
+              "dtype": "string",
+              "frequencies": {
+                "__NULL__": 0.026,
+                "business": 0.2413,
+                "consumer": 0.2407,
+                "nonprofit": 0.2401,
+                "public": 0.2519
+              },
+              "null_count": 260,
+              "null_rate": 0.026,
+              "unique_nonnull": 4
+            }
+          }
+        },
+        "parent_pid": 70801,
+        "pid": 71976,
+        "request": {
+          "batch_size": 1000,
+          "device": "cpu",
+          "sample_size": 10000,
+          "seed": 2456980200
+        },
+        "rss": {
+          "baseline_bytes": 512376832,
+          "peak_increase_bytes": 29016064,
+          "peak_process_tree_rss_bytes": 541392896
+        },
+        "schema_version": "1.0",
+        "source_dataframe_materialized": false,
+        "started_at": "2026-07-22T14:46:32.251630+00:00",
+        "status": "passed",
+        "supervisor": {
+          "label": "cpu-different-seed",
+          "observed_peak_process_tree_rss_bytes": 549273600,
+          "return_code": 0,
+          "stderr_tail": "W0722 23:46:34.437000 71976 torch/distributed/elastic/multiprocessing/redirects.py:29] NOTE: Redirects are currently not supported in Windows or MacOs.\n",
+          "stdout_tail": "",
+          "timed_out": false,
+          "wall_seconds": 3.24269133299822
+        },
+        "wall_seconds": 2.700610500003677
+      },
+      "same_seed_repeat": {
+        "checkpoint_checksum_after": {
+          "bytes": 602199,
+          "file_count": 12,
+          "files": [
+            {
+              "path": "ModelStore/model-data/lr-scheduler.pt",
+              "sha256": "ff7c8d5c25c19a0d50f0ca57adf2dca9d037af7db7180943f6378c8ec707fac9",
+              "size_bytes": 1803
+            },
+            {
+              "path": "ModelStore/model-data/model-configs.json",
+              "sha256": "83cb1d7aca8f4ad69f11c02df98c8d4d7772e8af32000da63d1afa7912e46a6d",
+              "size_bytes": 1544
+            },
+            {
+              "path": "ModelStore/model-data/model-weights.pt",
+              "sha256": "ef8421c65c2a3f9497ec5b5433f6975aac18eb8782baf6dea675846e6fe46f85",
+              "size_bytes": 106713
+            },
+            {
+              "path": "ModelStore/model-data/optimizer.pt",
+              "sha256": "abc5ca7383067c2637d59a8d94875be7f26fd0370a0bbbb762f1e11c3feea47c",
+              "size_bytes": 212235
+            },
+            {
+              "path": "ModelStore/model-data/progress-messages.csv",
+              "sha256": "a5a0c8c58df73a67a65b468c1644631afa1bd89b133eb88bdb9804c4271364a7",
+              "size_bytes": 188
+            },
+            {
+              "path": "ModelStore/tgt-stats/stats.json",
+              "sha256": "d9e2b9c543e8dbfb3fff1109a25537dd22ca434de58d92d1a303d3e5274b8dc2",
+              "size_bytes": 8191
+            },
+            {
+              "path": "OriginalData/encoded-data/part.000000-trn.parquet",
+              "sha256": "7c4e8a13a3c54a9a7fd72e186540e8ab48639cc3eeee5686d8a3dca45a9fa88e",
+              "size_bytes": 61856
+            },
+            {
+              "path": "OriginalData/encoded-data/part.000000-val.parquet",
+              "sha256": "4c3bd03debcb94e37febea762b8cd73b50c24ec1976258b99508fc5d56e1b0b4",
+              "size_bytes": 15827
+            },
+            {
+              "path": "OriginalData/tgt-data/part.000000-trn.parquet",
+              "sha256": "c2166713d3ccec4d0b0df3ad5e94ed06a3d717c96b6008b98312912535db23dc",
+              "size_bytes": 172195
+            },
+            {
+              "path": "OriginalData/tgt-data/part.000000-val.parquet",
+              "sha256": "06081070a20f2b85817586f90c85afa2135e1d1498a609f76ff155b444fe8a69",
+              "size_bytes": 21419
+            },
+            {
+              "path": "OriginalData/tgt-meta/encoding-types.json",
+              "sha256": "798c97b76e4bfc6adde06c47c821ed12af4204622fc2f5606688569e9b7cd3ff",
+              "size_bytes": 226
+            },
+            {
+              "path": "OriginalData/tgt-meta/keys.json",
+              "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+              "size_bytes": 2
+            }
+          ],
+          "sha256": "31c3e0b9ddf59d7f4cea8c31780d64a2c635ad5704d8db58a53dad7be054499f"
+        },
+        "checkpoint_checksum_before": {
+          "bytes": 602199,
+          "file_count": 12,
+          "files": [
+            {
+              "path": "ModelStore/model-data/lr-scheduler.pt",
+              "sha256": "ff7c8d5c25c19a0d50f0ca57adf2dca9d037af7db7180943f6378c8ec707fac9",
+              "size_bytes": 1803
+            },
+            {
+              "path": "ModelStore/model-data/model-configs.json",
+              "sha256": "83cb1d7aca8f4ad69f11c02df98c8d4d7772e8af32000da63d1afa7912e46a6d",
+              "size_bytes": 1544
+            },
+            {
+              "path": "ModelStore/model-data/model-weights.pt",
+              "sha256": "ef8421c65c2a3f9497ec5b5433f6975aac18eb8782baf6dea675846e6fe46f85",
+              "size_bytes": 106713
+            },
+            {
+              "path": "ModelStore/model-data/optimizer.pt",
+              "sha256": "abc5ca7383067c2637d59a8d94875be7f26fd0370a0bbbb762f1e11c3feea47c",
+              "size_bytes": 212235
+            },
+            {
+              "path": "ModelStore/model-data/progress-messages.csv",
+              "sha256": "a5a0c8c58df73a67a65b468c1644631afa1bd89b133eb88bdb9804c4271364a7",
+              "size_bytes": 188
+            },
+            {
+              "path": "ModelStore/tgt-stats/stats.json",
+              "sha256": "d9e2b9c543e8dbfb3fff1109a25537dd22ca434de58d92d1a303d3e5274b8dc2",
+              "size_bytes": 8191
+            },
+            {
+              "path": "OriginalData/encoded-data/part.000000-trn.parquet",
+              "sha256": "7c4e8a13a3c54a9a7fd72e186540e8ab48639cc3eeee5686d8a3dca45a9fa88e",
+              "size_bytes": 61856
+            },
+            {
+              "path": "OriginalData/encoded-data/part.000000-val.parquet",
+              "sha256": "4c3bd03debcb94e37febea762b8cd73b50c24ec1976258b99508fc5d56e1b0b4",
+              "size_bytes": 15827
+            },
+            {
+              "path": "OriginalData/tgt-data/part.000000-trn.parquet",
+              "sha256": "c2166713d3ccec4d0b0df3ad5e94ed06a3d717c96b6008b98312912535db23dc",
+              "size_bytes": 172195
+            },
+            {
+              "path": "OriginalData/tgt-data/part.000000-val.parquet",
+              "sha256": "06081070a20f2b85817586f90c85afa2135e1d1498a609f76ff155b444fe8a69",
+              "size_bytes": 21419
+            },
+            {
+              "path": "OriginalData/tgt-meta/encoding-types.json",
+              "sha256": "798c97b76e4bfc6adde06c47c821ed12af4204622fc2f5606688569e9b7cd3ff",
+              "size_bytes": 226
+            },
+            {
+              "path": "OriginalData/tgt-meta/keys.json",
+              "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+              "size_bytes": 2
+            }
+          ],
+          "sha256": "31c3e0b9ddf59d7f4cea8c31780d64a2c635ad5704d8db58a53dad7be054499f"
+        },
+        "checkpoint_files_unchanged": true,
+        "clone_workspace": "/var/folders/pm/2r0xv2ns2cs1xc9lkt06sz480000gn/T/sts-argn-contract-ujlbip9w/generation-clones/workspace-cpu-repeat",
+        "completed_at": "2026-07-22T14:46:31.693527+00:00",
+        "exceptions": [],
+        "operation": "fresh_process_generate",
+        "output": {
+          "arrow_schema": "age: int64\nincome: double\nsegment: large_string\nregion: large_string\nis_active: large_string\nevent_at: timestamp[ns]\n__index_level_0__: int64\n-- schema metadata --\npandas: '{\"index_columns\": [\"__index_level_0__\"], \"column_indexes\": [{\"na' + 1026",
+          "column_order": [
+            "age",
+            "income",
+            "segment",
+            "region",
+            "is_active",
+            "event_at",
+            "__index_level_0__"
+          ],
+          "columns": 7,
+          "content_sha256": "be8c9bb5c15bf3a3a47f1539d63455b561924c4b700de10172d476fd5e59094f",
+          "parquet": {
+            "bytes": 247838,
+            "file_count": 1,
+            "files": [
+              {
+                "path": "part.000000.000000.parquet",
+                "sha256": "501f11fcef862e67e5835d622f6afab8729f69ddfeeeaae8932a02b5d54b66b2",
+                "size_bytes": 247838
+              }
+            ],
+            "sha256": "b83bc9229a4ce031edfb80fd20534387318aa0ade9c7e10a4e1f5906025a2f50"
+          },
+          "python_candidate_dataframe_deep_bytes": 749681,
+          "python_candidate_dataframe_rows": 10000,
+          "rows": 10000,
+          "summary": {
+            "age": {
+              "dtype": "Int64",
+              "null_count": 361,
+              "null_rate": 0.0361,
+              "numeric": {
+                "max": 89.0,
+                "mean": 43.67382508558979,
+                "min": 18.0,
+                "std": 13.769117583634884
+              },
+              "unique_nonnull": 72
+            },
+            "event_at": {
+              "dtype": "datetime64[ns]",
+              "null_count": 483,
+              "null_rate": 0.0483,
+              "numeric": {
+                "max": 1.70401338e+18,
+                "mean": 1.657090927899548e+18,
+                "min": 1.60948662e+18,
+                "std": 2.7560380149060464e+16
+              },
+              "unique_nonnull": 9480
+            },
+            "income": {
+              "dtype": "Float64",
+              "null_count": 539,
+              "null_rate": 0.0539,
+              "numeric": {
+                "max": 365963.96,
+                "mean": 56050.56845576577,
+                "min": 7657.33,
+                "std": 36614.335257735
+              },
+              "unique_nonnull": 9456
+            },
+            "is_active": {
+              "dtype": "string",
+              "frequencies": {
+                "False": 0.3443,
+                "True": 0.6204,
+                "__NULL__": 0.0353
+              },
+              "null_count": 353,
+              "null_rate": 0.0353,
+              "unique_nonnull": 2
+            },
+            "region": {
+              "dtype": "string",
+              "frequencies": {
+                "__NULL__": 0.0243,
+                "central": 0.1918,
+                "east": 0.1981,
+                "north": 0.1972,
+                "south": 0.2026,
+                "west": 0.186
+              },
+              "null_count": 243,
+              "null_rate": 0.0243,
+              "unique_nonnull": 5
+            },
+            "segment": {
+              "dtype": "string",
+              "frequencies": {
+                "__NULL__": 0.0292,
+                "business": 0.2357,
+                "consumer": 0.2338,
+                "nonprofit": 0.2494,
+                "public": 0.2519
+              },
+              "null_count": 292,
+              "null_rate": 0.0292,
+              "unique_nonnull": 4
+            }
+          }
+        },
+        "parent_pid": 70801,
+        "pid": 71797,
+        "request": {
+          "batch_size": 1000,
+          "device": "cpu",
+          "sample_size": 10000,
+          "seed": 1079479087
+        },
+        "rss": {
+          "baseline_bytes": 513589248,
+          "peak_increase_bytes": 26640384,
+          "peak_process_tree_rss_bytes": 540229632
+        },
+        "schema_version": "1.0",
+        "source_dataframe_materialized": false,
+        "started_at": "2026-07-22T14:46:29.082153+00:00",
+        "status": "passed",
+        "supervisor": {
+          "label": "cpu-repeat",
+          "observed_peak_process_tree_rss_bytes": 559185920,
+          "return_code": 0,
+          "stderr_tail": "W0722 23:46:31.197000 71797 torch/distributed/elastic/multiprocessing/redirects.py:29] NOTE: Redirects are currently not supported in Windows or MacOs.\n",
+          "stdout_tail": "",
+          "timed_out": false,
+          "wall_seconds": 3.166292292007711
+        },
+        "wall_seconds": 2.611193042015657
+      }
+    },
+    "maximum_materialized_python_dataframe": {
+      "deep_bytes": 448780,
+      "kind": "bounded_training_dataframe",
+      "rows": 10000
+    },
+    "model_store": {
+      "bytes": 330674,
+      "file_count": 6
+    },
+    "mps_cpu_comparison": {
+      "columns": {
+        "age": {
+          "null_rate_difference": 0.0020000000000000018,
+          "null_rate_within_threshold": true,
+          "numeric_std_ratio_difference": 0.017522821899044604,
+          "numeric_std_ratio_within_threshold": true,
+          "standardized_numeric_mean_difference": 0.005484954534247957,
+          "standardized_numeric_mean_within_threshold": true,
+          "within_thresholds": true
+        },
+        "event_at": {
+          "null_rate_difference": 0.004900000000000002,
+          "null_rate_within_threshold": true,
+          "numeric_std_ratio_difference": 0.011319092226963012,
+          "numeric_std_ratio_within_threshold": true,
+          "standardized_numeric_mean_difference": 0.01568738838825062,
+          "standardized_numeric_mean_within_threshold": true,
+          "within_thresholds": true
+        },
+        "income": {
+          "null_rate_difference": 0.00030000000000000165,
+          "null_rate_within_threshold": true,
+          "numeric_std_ratio_difference": 0.019986421589798912,
+          "numeric_std_ratio_within_threshold": true,
+          "standardized_numeric_mean_difference": 0.01476046660763221,
+          "standardized_numeric_mean_within_threshold": true,
+          "within_thresholds": true
+        },
+        "is_active": {
+          "categorical_tvd": 0.016099999999999986,
+          "categorical_tvd_within_threshold": true,
+          "null_rate_difference": 0.002700000000000001,
+          "null_rate_within_threshold": true,
+          "within_thresholds": true
+        },
+        "region": {
+          "categorical_tvd": 0.006600000000000009,
+          "categorical_tvd_within_threshold": true,
+          "null_rate_difference": 0.0005000000000000004,
+          "null_rate_within_threshold": true,
+          "within_thresholds": true
+        },
+        "segment": {
+          "categorical_tvd": 0.006300000000000002,
+          "categorical_tvd_within_threshold": true,
+          "null_rate_difference": 0.0002999999999999982,
+          "null_rate_within_threshold": true,
+          "within_thresholds": true
+        }
+      },
+      "passed": true,
+      "same_arrow_schema": true,
+      "same_column_order": true,
+      "same_rows": true,
+      "thresholds": {
+        "maximum_categorical_tvd": 0.1,
+        "maximum_null_rate_difference": 0.02,
+        "maximum_numeric_std_ratio_difference": 0.25,
+        "maximum_standardized_numeric_mean_difference": 0.15
+      }
+    },
+    "mps_generation": {
+      "checkpoint_checksum_after": {
+        "bytes": 602199,
+        "file_count": 12,
+        "files": [
+          {
+            "path": "ModelStore/model-data/lr-scheduler.pt",
+            "sha256": "ff7c8d5c25c19a0d50f0ca57adf2dca9d037af7db7180943f6378c8ec707fac9",
+            "size_bytes": 1803
+          },
+          {
+            "path": "ModelStore/model-data/model-configs.json",
+            "sha256": "83cb1d7aca8f4ad69f11c02df98c8d4d7772e8af32000da63d1afa7912e46a6d",
+            "size_bytes": 1544
+          },
+          {
+            "path": "ModelStore/model-data/model-weights.pt",
+            "sha256": "ef8421c65c2a3f9497ec5b5433f6975aac18eb8782baf6dea675846e6fe46f85",
+            "size_bytes": 106713
+          },
+          {
+            "path": "ModelStore/model-data/optimizer.pt",
+            "sha256": "abc5ca7383067c2637d59a8d94875be7f26fd0370a0bbbb762f1e11c3feea47c",
+            "size_bytes": 212235
+          },
+          {
+            "path": "ModelStore/model-data/progress-messages.csv",
+            "sha256": "a5a0c8c58df73a67a65b468c1644631afa1bd89b133eb88bdb9804c4271364a7",
+            "size_bytes": 188
+          },
+          {
+            "path": "ModelStore/tgt-stats/stats.json",
+            "sha256": "d9e2b9c543e8dbfb3fff1109a25537dd22ca434de58d92d1a303d3e5274b8dc2",
+            "size_bytes": 8191
+          },
+          {
+            "path": "OriginalData/encoded-data/part.000000-trn.parquet",
+            "sha256": "7c4e8a13a3c54a9a7fd72e186540e8ab48639cc3eeee5686d8a3dca45a9fa88e",
+            "size_bytes": 61856
+          },
+          {
+            "path": "OriginalData/encoded-data/part.000000-val.parquet",
+            "sha256": "4c3bd03debcb94e37febea762b8cd73b50c24ec1976258b99508fc5d56e1b0b4",
+            "size_bytes": 15827
+          },
+          {
+            "path": "OriginalData/tgt-data/part.000000-trn.parquet",
+            "sha256": "c2166713d3ccec4d0b0df3ad5e94ed06a3d717c96b6008b98312912535db23dc",
+            "size_bytes": 172195
+          },
+          {
+            "path": "OriginalData/tgt-data/part.000000-val.parquet",
+            "sha256": "06081070a20f2b85817586f90c85afa2135e1d1498a609f76ff155b444fe8a69",
+            "size_bytes": 21419
+          },
+          {
+            "path": "OriginalData/tgt-meta/encoding-types.json",
+            "sha256": "798c97b76e4bfc6adde06c47c821ed12af4204622fc2f5606688569e9b7cd3ff",
+            "size_bytes": 226
+          },
+          {
+            "path": "OriginalData/tgt-meta/keys.json",
+            "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+            "size_bytes": 2
+          }
+        ],
+        "sha256": "31c3e0b9ddf59d7f4cea8c31780d64a2c635ad5704d8db58a53dad7be054499f"
+      },
+      "checkpoint_checksum_before": {
+        "bytes": 602199,
+        "file_count": 12,
+        "files": [
+          {
+            "path": "ModelStore/model-data/lr-scheduler.pt",
+            "sha256": "ff7c8d5c25c19a0d50f0ca57adf2dca9d037af7db7180943f6378c8ec707fac9",
+            "size_bytes": 1803
+          },
+          {
+            "path": "ModelStore/model-data/model-configs.json",
+            "sha256": "83cb1d7aca8f4ad69f11c02df98c8d4d7772e8af32000da63d1afa7912e46a6d",
+            "size_bytes": 1544
+          },
+          {
+            "path": "ModelStore/model-data/model-weights.pt",
+            "sha256": "ef8421c65c2a3f9497ec5b5433f6975aac18eb8782baf6dea675846e6fe46f85",
+            "size_bytes": 106713
+          },
+          {
+            "path": "ModelStore/model-data/optimizer.pt",
+            "sha256": "abc5ca7383067c2637d59a8d94875be7f26fd0370a0bbbb762f1e11c3feea47c",
+            "size_bytes": 212235
+          },
+          {
+            "path": "ModelStore/model-data/progress-messages.csv",
+            "sha256": "a5a0c8c58df73a67a65b468c1644631afa1bd89b133eb88bdb9804c4271364a7",
+            "size_bytes": 188
+          },
+          {
+            "path": "ModelStore/tgt-stats/stats.json",
+            "sha256": "d9e2b9c543e8dbfb3fff1109a25537dd22ca434de58d92d1a303d3e5274b8dc2",
+            "size_bytes": 8191
+          },
+          {
+            "path": "OriginalData/encoded-data/part.000000-trn.parquet",
+            "sha256": "7c4e8a13a3c54a9a7fd72e186540e8ab48639cc3eeee5686d8a3dca45a9fa88e",
+            "size_bytes": 61856
+          },
+          {
+            "path": "OriginalData/encoded-data/part.000000-val.parquet",
+            "sha256": "4c3bd03debcb94e37febea762b8cd73b50c24ec1976258b99508fc5d56e1b0b4",
+            "size_bytes": 15827
+          },
+          {
+            "path": "OriginalData/tgt-data/part.000000-trn.parquet",
+            "sha256": "c2166713d3ccec4d0b0df3ad5e94ed06a3d717c96b6008b98312912535db23dc",
+            "size_bytes": 172195
+          },
+          {
+            "path": "OriginalData/tgt-data/part.000000-val.parquet",
+            "sha256": "06081070a20f2b85817586f90c85afa2135e1d1498a609f76ff155b444fe8a69",
+            "size_bytes": 21419
+          },
+          {
+            "path": "OriginalData/tgt-meta/encoding-types.json",
+            "sha256": "798c97b76e4bfc6adde06c47c821ed12af4204622fc2f5606688569e9b7cd3ff",
+            "size_bytes": 226
+          },
+          {
+            "path": "OriginalData/tgt-meta/keys.json",
+            "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+            "size_bytes": 2
+          }
+        ],
+        "sha256": "31c3e0b9ddf59d7f4cea8c31780d64a2c635ad5704d8db58a53dad7be054499f"
+      },
+      "checkpoint_files_unchanged": true,
+      "clone_workspace": "/var/folders/pm/2r0xv2ns2cs1xc9lkt06sz480000gn/T/sts-argn-contract-ujlbip9w/generation-clones/workspace-mps-parity",
+      "completed_at": "2026-07-22T14:46:39.074160+00:00",
+      "exceptions": [],
+      "operation": "fresh_process_generate",
+      "output": {
+        "arrow_schema": "age: int64\nincome: double\nsegment: large_string\nregion: large_string\nis_active: large_string\nevent_at: timestamp[ns]\n__index_level_0__: int64\n-- schema metadata --\npandas: '{\"index_columns\": [\"__index_level_0__\"], \"column_indexes\": [{\"na' + 1026",
+        "column_order": [
+          "age",
+          "income",
+          "segment",
+          "region",
+          "is_active",
+          "event_at",
+          "__index_level_0__"
+        ],
+        "columns": 7,
+        "content_sha256": "4a84d42d4d4eb42f280f6519e321f947cedddafc538cbf42ea6c0675e7088d99",
+        "parquet": {
+          "bytes": 248374,
+          "file_count": 1,
+          "files": [
+            {
+              "path": "part.000000.000000.parquet",
+              "sha256": "4c717d831ad46c29072e9db8c6856e1a0eee3006b73e4c104f7ad3ccec78bb2c",
+              "size_bytes": 248374
+            }
+          ],
+          "sha256": "b18a1eadfb31a1aa910784477fc29387e841a51759f43e600a8cf4b3fb0cd4da"
+        },
+        "python_candidate_dataframe_deep_bytes": 750081,
+        "python_candidate_dataframe_rows": 10000,
+        "rows": 10000,
+        "summary": {
+          "age": {
+            "dtype": "Int64",
+            "null_count": 341,
+            "null_rate": 0.0341,
+            "numeric": {
+              "max": 89.0,
+              "mean": 43.59830210166684,
+              "min": 18.0,
+              "std": 14.010391378759921
+            },
+            "unique_nonnull": 71
+          },
+          "event_at": {
+            "dtype": "datetime64[ns]",
+            "null_count": 434,
+            "null_rate": 0.0434,
+            "numeric": {
+              "max": 1.70401338e+18,
+              "mean": 1.6566585775120218e+18,
+              "min": 1.60948662e+18,
+              "std": 2.724842166434309e+16
+            },
+            "unique_nonnull": 9532
+          },
+          "income": {
+            "dtype": "Float64",
+            "null_count": 536,
+            "null_rate": 0.0536,
+            "numeric": {
+              "max": 365963.96,
+              "mean": 56591.01312869822,
+              "min": 7614.7,
+              "std": 37346.12479842633
+            },
+            "unique_nonnull": 9457
+          },
+          "is_active": {
+            "dtype": "string",
+            "frequencies": {
+              "False": 0.3604,
+              "True": 0.607,
+              "__NULL__": 0.0326
+            },
+            "null_count": 326,
+            "null_rate": 0.0326,
+            "unique_nonnull": 2
+          },
+          "region": {
+            "dtype": "string",
+            "frequencies": {
+              "__NULL__": 0.0248,
+              "central": 0.1978,
+              "east": 0.1977,
+              "north": 0.1973,
+              "south": 0.1975,
+              "west": 0.1849
+            },
+            "null_count": 248,
+            "null_rate": 0.0248,
+            "unique_nonnull": 5
+          },
+          "segment": {
+            "dtype": "string",
+            "frequencies": {
+              "__NULL__": 0.0295,
+              "business": 0.2324,
+              "consumer": 0.2398,
+              "nonprofit": 0.2489,
+              "public": 0.2494
+            },
+            "null_count": 295,
+            "null_rate": 0.0295,
+            "unique_nonnull": 4
+          }
+        }
+      },
+      "parent_pid": 70801,
+      "pid": 72212,
+      "request": {
+        "batch_size": 1000,
+        "device": "mps",
+        "sample_size": 10000,
+        "seed": 1079479087
+      },
+      "rss": {
+        "baseline_bytes": 509673472,
+        "peak_increase_bytes": 234045440,
+        "peak_process_tree_rss_bytes": 743718912
+      },
+      "schema_version": "1.0",
+      "source_dataframe_materialized": false,
+      "started_at": "2026-07-22T14:46:35.498084+00:00",
+      "status": "passed",
+      "supervisor": {
+        "label": "mps-parity",
+        "observed_peak_process_tree_rss_bytes": 751386624,
+        "return_code": 0,
+        "stderr_tail": "W0722 23:46:37.636000 72212 torch/distributed/elastic/multiprocessing/redirects.py:29] NOTE: Redirects are currently not supported in Windows or MacOs.\n",
+        "stdout_tail": "",
+        "timed_out": false,
+        "wall_seconds": 4.081830458017066
+      },
+      "wall_seconds": 3.5758626669994555
+    },
+    "multiprocess_clone_probe": {
+      "disabled_reason": "no requested process level is supported by 0 observed CUDA devices",
+      "levels": [
+        {
+          "attempted": false,
+          "passed": false,
+          "process_count": 1,
+          "reason": "requires 1 CUDA devices; observed 0"
+        },
+        {
+          "attempted": false,
+          "passed": false,
+          "process_count": 2,
+          "reason": "requires 2 CUDA devices; observed 0"
+        },
+        {
+          "attempted": false,
+          "passed": false,
+          "process_count": 4,
+          "reason": "requires 4 CUDA devices; observed 0"
+        }
+      ],
+      "original_workspace_checksum_after": {
+        "bytes": 602199,
+        "file_count": 12,
+        "files": [
+          {
+            "path": "ModelStore/model-data/lr-scheduler.pt",
+            "sha256": "ff7c8d5c25c19a0d50f0ca57adf2dca9d037af7db7180943f6378c8ec707fac9",
+            "size_bytes": 1803
+          },
+          {
+            "path": "ModelStore/model-data/model-configs.json",
+            "sha256": "83cb1d7aca8f4ad69f11c02df98c8d4d7772e8af32000da63d1afa7912e46a6d",
+            "size_bytes": 1544
+          },
+          {
+            "path": "ModelStore/model-data/model-weights.pt",
+            "sha256": "ef8421c65c2a3f9497ec5b5433f6975aac18eb8782baf6dea675846e6fe46f85",
+            "size_bytes": 106713
+          },
+          {
+            "path": "ModelStore/model-data/optimizer.pt",
+            "sha256": "abc5ca7383067c2637d59a8d94875be7f26fd0370a0bbbb762f1e11c3feea47c",
+            "size_bytes": 212235
+          },
+          {
+            "path": "ModelStore/model-data/progress-messages.csv",
+            "sha256": "a5a0c8c58df73a67a65b468c1644631afa1bd89b133eb88bdb9804c4271364a7",
+            "size_bytes": 188
+          },
+          {
+            "path": "ModelStore/tgt-stats/stats.json",
+            "sha256": "d9e2b9c543e8dbfb3fff1109a25537dd22ca434de58d92d1a303d3e5274b8dc2",
+            "size_bytes": 8191
+          },
+          {
+            "path": "OriginalData/encoded-data/part.000000-trn.parquet",
+            "sha256": "7c4e8a13a3c54a9a7fd72e186540e8ab48639cc3eeee5686d8a3dca45a9fa88e",
+            "size_bytes": 61856
+          },
+          {
+            "path": "OriginalData/encoded-data/part.000000-val.parquet",
+            "sha256": "4c3bd03debcb94e37febea762b8cd73b50c24ec1976258b99508fc5d56e1b0b4",
+            "size_bytes": 15827
+          },
+          {
+            "path": "OriginalData/tgt-data/part.000000-trn.parquet",
+            "sha256": "c2166713d3ccec4d0b0df3ad5e94ed06a3d717c96b6008b98312912535db23dc",
+            "size_bytes": 172195
+          },
+          {
+            "path": "OriginalData/tgt-data/part.000000-val.parquet",
+            "sha256": "06081070a20f2b85817586f90c85afa2135e1d1498a609f76ff155b444fe8a69",
+            "size_bytes": 21419
+          },
+          {
+            "path": "OriginalData/tgt-meta/encoding-types.json",
+            "sha256": "798c97b76e4bfc6adde06c47c821ed12af4204622fc2f5606688569e9b7cd3ff",
+            "size_bytes": 226
+          },
+          {
+            "path": "OriginalData/tgt-meta/keys.json",
+            "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+            "size_bytes": 2
+          }
+        ],
+        "sha256": "31c3e0b9ddf59d7f4cea8c31780d64a2c635ad5704d8db58a53dad7be054499f"
+      },
+      "original_workspace_checksum_before": {
+        "bytes": 602199,
+        "file_count": 12,
+        "files": [
+          {
+            "path": "ModelStore/model-data/lr-scheduler.pt",
+            "sha256": "ff7c8d5c25c19a0d50f0ca57adf2dca9d037af7db7180943f6378c8ec707fac9",
+            "size_bytes": 1803
+          },
+          {
+            "path": "ModelStore/model-data/model-configs.json",
+            "sha256": "83cb1d7aca8f4ad69f11c02df98c8d4d7772e8af32000da63d1afa7912e46a6d",
+            "size_bytes": 1544
+          },
+          {
+            "path": "ModelStore/model-data/model-weights.pt",
+            "sha256": "ef8421c65c2a3f9497ec5b5433f6975aac18eb8782baf6dea675846e6fe46f85",
+            "size_bytes": 106713
+          },
+          {
+            "path": "ModelStore/model-data/optimizer.pt",
+            "sha256": "abc5ca7383067c2637d59a8d94875be7f26fd0370a0bbbb762f1e11c3feea47c",
+            "size_bytes": 212235
+          },
+          {
+            "path": "ModelStore/model-data/progress-messages.csv",
+            "sha256": "a5a0c8c58df73a67a65b468c1644631afa1bd89b133eb88bdb9804c4271364a7",
+            "size_bytes": 188
+          },
+          {
+            "path": "ModelStore/tgt-stats/stats.json",
+            "sha256": "d9e2b9c543e8dbfb3fff1109a25537dd22ca434de58d92d1a303d3e5274b8dc2",
+            "size_bytes": 8191
+          },
+          {
+            "path": "OriginalData/encoded-data/part.000000-trn.parquet",
+            "sha256": "7c4e8a13a3c54a9a7fd72e186540e8ab48639cc3eeee5686d8a3dca45a9fa88e",
+            "size_bytes": 61856
+          },
+          {
+            "path": "OriginalData/encoded-data/part.000000-val.parquet",
+            "sha256": "4c3bd03debcb94e37febea762b8cd73b50c24ec1976258b99508fc5d56e1b0b4",
+            "size_bytes": 15827
+          },
+          {
+            "path": "OriginalData/tgt-data/part.000000-trn.parquet",
+            "sha256": "c2166713d3ccec4d0b0df3ad5e94ed06a3d717c96b6008b98312912535db23dc",
+            "size_bytes": 172195
+          },
+          {
+            "path": "OriginalData/tgt-data/part.000000-val.parquet",
+            "sha256": "06081070a20f2b85817586f90c85afa2135e1d1498a609f76ff155b444fe8a69",
+            "size_bytes": 21419
+          },
+          {
+            "path": "OriginalData/tgt-meta/encoding-types.json",
+            "sha256": "798c97b76e4bfc6adde06c47c821ed12af4204622fc2f5606688569e9b7cd3ff",
+            "size_bytes": 226
+          },
+          {
+            "path": "OriginalData/tgt-meta/keys.json",
+            "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+            "size_bytes": 2
+          }
+        ],
+        "sha256": "31c3e0b9ddf59d7f4cea8c31780d64a2c635ad5704d8db58a53dad7be054499f"
+      },
+      "original_workspace_unchanged": true,
+      "passed": false,
+      "requested_process_counts": [
+        1,
+        2,
+        4
+      ]
+    },
+    "original_workspace_unchanged": true,
+    "split_rows": {
+      "training": 9036,
+      "validation": 964
+    },
+    "stages": {
+      "analyze": {
+        "rss": {
+          "baseline_bytes": 526729216,
+          "peak_increase_bytes": 4887576576,
+          "peak_process_tree_rss_bytes": 5414305792
+        },
+        "status": "passed",
+        "wall_seconds": 5.536582332977559
+      },
+      "encode": {
+        "rss": {
+          "baseline_bytes": 5414273024,
+          "peak_increase_bytes": 877903872,
+          "peak_process_tree_rss_bytes": 6292176896
+        },
+        "status": "passed",
+        "wall_seconds": 2.8876576669863425
+      },
+      "split": {
+        "rss": {
+          "baseline_bytes": 517013504,
+          "peak_increase_bytes": 9453568,
+          "peak_process_tree_rss_bytes": 526467072
+        },
+        "status": "passed",
+        "wall_seconds": 0.05227129202103242
+      },
+      "train": {
+        "rss": {
+          "baseline_bytes": 6172475392,
+          "peak_increase_bytes": 0,
+          "peak_process_tree_rss_bytes": 6172475392
+        },
+        "status": "passed",
+        "wall_seconds": 3.526399708003737
+      }
+    },
+    "workspace_checksum_after_generations": {
+      "bytes": 602199,
+      "file_count": 12,
+      "files": [
+        {
+          "path": "ModelStore/model-data/lr-scheduler.pt",
+          "sha256": "ff7c8d5c25c19a0d50f0ca57adf2dca9d037af7db7180943f6378c8ec707fac9",
+          "size_bytes": 1803
+        },
+        {
+          "path": "ModelStore/model-data/model-configs.json",
+          "sha256": "83cb1d7aca8f4ad69f11c02df98c8d4d7772e8af32000da63d1afa7912e46a6d",
+          "size_bytes": 1544
+        },
+        {
+          "path": "ModelStore/model-data/model-weights.pt",
+          "sha256": "ef8421c65c2a3f9497ec5b5433f6975aac18eb8782baf6dea675846e6fe46f85",
+          "size_bytes": 106713
+        },
+        {
+          "path": "ModelStore/model-data/optimizer.pt",
+          "sha256": "abc5ca7383067c2637d59a8d94875be7f26fd0370a0bbbb762f1e11c3feea47c",
+          "size_bytes": 212235
+        },
+        {
+          "path": "ModelStore/model-data/progress-messages.csv",
+          "sha256": "a5a0c8c58df73a67a65b468c1644631afa1bd89b133eb88bdb9804c4271364a7",
+          "size_bytes": 188
+        },
+        {
+          "path": "ModelStore/tgt-stats/stats.json",
+          "sha256": "d9e2b9c543e8dbfb3fff1109a25537dd22ca434de58d92d1a303d3e5274b8dc2",
+          "size_bytes": 8191
+        },
+        {
+          "path": "OriginalData/encoded-data/part.000000-trn.parquet",
+          "sha256": "7c4e8a13a3c54a9a7fd72e186540e8ab48639cc3eeee5686d8a3dca45a9fa88e",
+          "size_bytes": 61856
+        },
+        {
+          "path": "OriginalData/encoded-data/part.000000-val.parquet",
+          "sha256": "4c3bd03debcb94e37febea762b8cd73b50c24ec1976258b99508fc5d56e1b0b4",
+          "size_bytes": 15827
+        },
+        {
+          "path": "OriginalData/tgt-data/part.000000-trn.parquet",
+          "sha256": "c2166713d3ccec4d0b0df3ad5e94ed06a3d717c96b6008b98312912535db23dc",
+          "size_bytes": 172195
+        },
+        {
+          "path": "OriginalData/tgt-data/part.000000-val.parquet",
+          "sha256": "06081070a20f2b85817586f90c85afa2135e1d1498a609f76ff155b444fe8a69",
+          "size_bytes": 21419
+        },
+        {
+          "path": "OriginalData/tgt-meta/encoding-types.json",
+          "sha256": "798c97b76e4bfc6adde06c47c821ed12af4204622fc2f5606688569e9b7cd3ff",
+          "size_bytes": 226
+        },
+        {
+          "path": "OriginalData/tgt-meta/keys.json",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+          "size_bytes": 2
+        }
+      ],
+      "sha256": "31c3e0b9ddf59d7f4cea8c31780d64a2c635ad5704d8db58a53dad7be054499f"
+    },
+    "workspace_checksum_before_generations": {
+      "bytes": 602199,
+      "file_count": 12,
+      "files": [
+        {
+          "path": "ModelStore/model-data/lr-scheduler.pt",
+          "sha256": "ff7c8d5c25c19a0d50f0ca57adf2dca9d037af7db7180943f6378c8ec707fac9",
+          "size_bytes": 1803
+        },
+        {
+          "path": "ModelStore/model-data/model-configs.json",
+          "sha256": "83cb1d7aca8f4ad69f11c02df98c8d4d7772e8af32000da63d1afa7912e46a6d",
+          "size_bytes": 1544
+        },
+        {
+          "path": "ModelStore/model-data/model-weights.pt",
+          "sha256": "ef8421c65c2a3f9497ec5b5433f6975aac18eb8782baf6dea675846e6fe46f85",
+          "size_bytes": 106713
+        },
+        {
+          "path": "ModelStore/model-data/optimizer.pt",
+          "sha256": "abc5ca7383067c2637d59a8d94875be7f26fd0370a0bbbb762f1e11c3feea47c",
+          "size_bytes": 212235
+        },
+        {
+          "path": "ModelStore/model-data/progress-messages.csv",
+          "sha256": "a5a0c8c58df73a67a65b468c1644631afa1bd89b133eb88bdb9804c4271364a7",
+          "size_bytes": 188
+        },
+        {
+          "path": "ModelStore/tgt-stats/stats.json",
+          "sha256": "d9e2b9c543e8dbfb3fff1109a25537dd22ca434de58d92d1a303d3e5274b8dc2",
+          "size_bytes": 8191
+        },
+        {
+          "path": "OriginalData/encoded-data/part.000000-trn.parquet",
+          "sha256": "7c4e8a13a3c54a9a7fd72e186540e8ab48639cc3eeee5686d8a3dca45a9fa88e",
+          "size_bytes": 61856
+        },
+        {
+          "path": "OriginalData/encoded-data/part.000000-val.parquet",
+          "sha256": "4c3bd03debcb94e37febea762b8cd73b50c24ec1976258b99508fc5d56e1b0b4",
+          "size_bytes": 15827
+        },
+        {
+          "path": "OriginalData/tgt-data/part.000000-trn.parquet",
+          "sha256": "c2166713d3ccec4d0b0df3ad5e94ed06a3d717c96b6008b98312912535db23dc",
+          "size_bytes": 172195
+        },
+        {
+          "path": "OriginalData/tgt-data/part.000000-val.parquet",
+          "sha256": "06081070a20f2b85817586f90c85afa2135e1d1498a609f76ff155b444fe8a69",
+          "size_bytes": 21419
+        },
+        {
+          "path": "OriginalData/tgt-meta/encoding-types.json",
+          "sha256": "798c97b76e4bfc6adde06c47c821ed12af4204622fc2f5606688569e9b7cd3ff",
+          "size_bytes": 226
+        },
+        {
+          "path": "OriginalData/tgt-meta/keys.json",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+          "size_bytes": 2
+        }
+      ],
+      "sha256": "31c3e0b9ddf59d7f4cea8c31780d64a2c635ad5704d8db58a53dad7be054499f"
+    }
+  },
+  "environment": {
+    "cuda": {
+      "cuda_device_count": 0,
+      "devices": [],
+      "torch_cuda_available": false
+    },
+    "machine": "arm64",
+    "mps": {
+      "torch_mps_available": true,
+      "torch_mps_built": true
+    },
+    "packages": {
+      "mostlyai-engine": "2.6.2",
+      "numpy": "2.4.6",
+      "pandas": "3.0.3",
+      "psutil": "5.9.8",
+      "pyarrow": "25.0.0",
+      "torch": "2.11.0"
+    },
+    "platform": "macOS-15.7.3-arm64-arm-64bit",
+    "python": "3.11.15 (main, May  4 2026, 21:04:48) [Clang 22.1.3 ]",
+    "python_executable": "<repository>/workers/argn/.venv/bin/python"
+  },
+  "exceptions": [],
+  "feature_gates": {
+    "bounded_generation": {
+      "actual_rows": 10000,
+      "candidate_dataframe_rows": 10000,
+      "enabled": true,
+      "engine_batch_size": 1000,
+      "reason": "fresh generation produced the exact bounded row request",
+      "requested_rows": 10000
+    },
+    "deterministic_generation": {
+      "enabled": true,
+      "reason": "same checkpoint and seed reproduced content; a different seed changed content"
+    },
+    "fresh_process_checkpoint_generation": {
+      "enabled": true,
+      "fit_and_generation_are_distinct": true,
+      "fit_process_exited_before_generation": true,
+      "fit_process_pid": 70806,
+      "generation_process_pid": 71579,
+      "parent_probe_pid": 70801,
+      "reason": "fit process exited, then a distinct fresh interpreter generated from the checkpoint without a source DataFrame"
+    },
+    "mps_parity": {
+      "attempted": true,
+      "enabled": true,
+      "reason": "MPS and CPU generation passed the recorded schema/distribution parity thresholds"
+    },
+    "multiprocess_clones": {
+      "attempted_levels": [],
+      "enabled": false,
+      "reason": "no requested process level is supported by 0 observed CUDA devices"
+    },
+    "utility_backend": {
+      "enabled": true,
+      "reason": "bounded generation contract passed"
+    }
+  },
+  "package_identity": {
+    "distribution": "mostlyai-engine",
+    "installed_distribution": {
+      "bytes": 627492,
+      "file_count": 56,
+      "sha256": "05d07d511508d32b16c7199b46ba93efdf3d0320f13a6a1cece56a80853364bd"
+    },
+    "installed_version": "2.6.2",
+    "license": null,
+    "location": "<repository>/workers/argn/.venv/lib/python3.11/site-packages",
+    "lock_path": "<repository>/workers/argn/uv.lock",
+    "lock_sha256": "b65b83e66f3493b1ebeb49a5060a5b1503380a44bc33be13b153a7e904f85458",
+    "locked_sdist": {
+      "hash": "sha256:a75ce62fc4e91adf1f5fae7166431aec8e1505f26ef260d078e1607fcfb44d82",
+      "size": 141097,
+      "upload-time": "2026-05-08T12:13:33.198Z",
+      "url": "https://files.pythonhosted.org/packages/d9/60/63bf33bd8a04e75a9f398d7cde74b6ca08cde2e8a2108d558166ad099d4e/mostlyai_engine-2.6.2.tar.gz"
+    },
+    "locked_source": {
+      "registry": "https://pypi.org/simple"
+    },
+    "locked_wheels": [
+      {
+        "hash": "sha256:3ead3770c936919f8fce4e1f9fffd271ffdd490f0292c2ab9a42cb4bafe3caea",
+        "size": 185077,
+        "upload-time": "2026-05-08T12:13:31.234Z",
+        "url": "https://files.pythonhosted.org/packages/52/c3/043b7b76afc5f21bcff13b018c269a607226be79cfd133769be159508933/mostlyai_engine-2.6.2-py3-none-any.whl"
+      }
+    ],
+    "metadata_name": "mostlyai-engine",
+    "requires_dist": [
+      "accelerate>=1.5.0",
+      "datasets>=3.0.0",
+      "huggingface-hub[hf-xet]>=0.30.2",
+      "joblib>=1.4.2",
+      "json-repair>=0.47.0",
+      "numpy>=2.0.0",
+      "opacus>=1.6.0",
+      "pandas>=2.2.0",
+      "peft>=0.18.2",
+      "psutil<6,>=5.9.5",
+      "pyarrow>=16.0.0",
+      "scikit-learn>=1.4.0",
+      "setuptools<81.0.0,>=77.0.3",
+      "tokenizers>=0.21.1",
+      "torch<2.12.0,>=2.11.0",
+      "torchaudio<2.12.0,>=2.11.0",
+      "torchvision<0.27.0,>=0.26.0",
+      "transformers>=5.5.1",
+      "xgrammar<1.0.0,>=0.1.32",
+      "bitsandbytes==0.42.0; (sys_platform == 'darwin') and extra == 'gpu'",
+      "bitsandbytes>=0.45.5; (sys_platform == 'linux') and extra == 'gpu'",
+      "vllm==0.20.0; (sys_platform == 'linux' or sys_platform == 'darwin') and extra == 'gpu'"
+    ]
+  },
+  "probe": "argn_contract",
+  "schema_version": "1.0",
+  "seed_checks": {
+    "derived_32bit_seeds": {
+      "collision_free": true,
+      "reproducible": true,
+      "values": [
+        1104586749,
+        3385165755,
+        509760943,
+        1965256556,
+        1717574205,
+        1436143833,
+        3221357361
+      ],
+      "within_uint32": true
+    },
+    "engine_generation": {
+      "baseline_content_sha256": "be8c9bb5c15bf3a3a47f1539d63455b561924c4b700de10172d476fd5e59094f",
+      "baseline_seed": 1079479087,
+      "different_seed": 2456980200,
+      "different_seed_content_differs": true,
+      "different_seed_content_sha256": "738aa495a385199bcebf9424bc587fc1fc32ff7ca4b5f3f8a2174e36035f238b",
+      "repeat_content_sha256": "be8c9bb5c15bf3a3a47f1539d63455b561924c4b700de10172d476fd5e59094f",
+      "same_seed_content_equal": true
+    },
+    "fixture": {
+      "first_sha256": "912181a7cecae67c3d22cd61f6ac68f3922e8272d39185bb837723b3a2c43200",
+      "reproducible": true,
+      "second_sha256": "912181a7cecae67c3d22cd61f6ac68f3922e8272d39185bb837723b3a2c43200"
+    },
+    "split": {
+      "complete": true,
+      "disjoint": true,
+      "reproducible": true,
+      "training_rows": 9036,
+      "training_sha256": "f8af09cbcfb56f140d094b652db86ead374fc27c26756667d99696044d30c5a7",
+      "validation_rows": 964,
+      "validation_sha256": "fb7061ea9131c5c38991d78c4816c4b8fb9f029f0701b9531e3d4df65cd0a3a6"
+    }
+  },
+  "staircase": {
+    "configured_fit_rows": [
+      10000,
+      50000,
+      250000
+    ],
+    "configured_generation_rows": [
+      10000,
+      100000,
+      1000000
+    ],
+    "executed": false,
+    "reason": "expensive staircase is opt-in via --run-staircase"
+  },
+  "started_at": "2026-07-22T14:46:08.952799+00:00",
+  "status": "passed",
+  "wall_seconds": 30.59979054197902
+}

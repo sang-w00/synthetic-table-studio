@@ -1,0 +1,377 @@
+{
+  "accounting_audit": {
+    "adjacency": "add_remove_one_row",
+    "checks": {
+      "add_one_histogram_l1_sensitivity_is_one": true,
+      "add_one_histogram_l2_sensitivity_is_one": true,
+      "installed_rho_matches_independent_conversion": true,
+      "installed_rho_matches_known_vector": true,
+      "mst_sigma_matches_known_vector": true,
+      "remove_one_is_symmetric": true,
+      "rho_to_delta_roundtrip": true,
+      "rho_to_epsilon_roundtrip": true,
+      "three_equal_rho_allocations_sum_to_total": true
+    },
+    "conversion": {
+      "delta": 1e-06,
+      "delta_roundtrip": 9.999999999999997e-07,
+      "epsilon": 3.0,
+      "epsilon_roundtrip": 3.0,
+      "independent_rho": 0.18506984065340149,
+      "mst_sigma": 2.846936654408663,
+      "rho": 0.18506984065340149
+    },
+    "known_vector": {
+      "added_histogram": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "base_histogram": [
+        1,
+        0,
+        1,
+        1
+      ],
+      "difference": [
+        0,
+        1,
+        0,
+        0
+      ],
+      "l1_sensitivity": 1.0,
+      "l2_sensitivity": 1.0
+    },
+    "passed": true,
+    "privacy_unit": "row",
+    "rho_allocation": {
+      "one_way_measurements": 0.06168994688446716,
+      "pair_selection": 0.06168994688446716,
+      "total": 0.18506984065340149,
+      "two_way_measurements": 0.06168994688446716
+    }
+  },
+  "aim": {
+    "enabled": false,
+    "equivalent_gates_executed": false,
+    "reason_code": "AIM_EQUIVALENT_GATES_NOT_RUN"
+  },
+  "environment": {
+    "checks": {
+      "declared_versions_exact": true,
+      "dpmm_wheel_hash_exact": true,
+      "imports_versions_exact": true,
+      "lock_versions_exact": true,
+      "python_is_3_11": true,
+      "requires_python_is_3_11_only": true,
+      "worker_package_imports": true
+    },
+    "declared_versions": {
+      "dpmm": "0.1.9",
+      "numpy": "1.26.4",
+      "pandas": "2.1.0"
+    },
+    "dpmm_wheel_sha256": "fbd71d26caa51733cf1d8382f140faa755d7157e7d471191fee2c4a862a2f51b",
+    "implementation": "CPython",
+    "imported_versions": {
+      "dpmm": "0.1.9",
+      "numpy": "1.26.4",
+      "pandas": "2.1.0"
+    },
+    "lock_sha256": "aa227523a7596897b9459253af9a6f320cbcb6807e8e564af2dffce18adb43eb",
+    "passed": true,
+    "python": "3.11.15",
+    "resolved_versions": {
+      "dpmm": "0.1.9",
+      "numpy": "1.26.4",
+      "pandas": "2.1.0"
+    }
+  },
+  "failure_reasons": [
+    "checkpoint_schema_and_secret_audit"
+  ],
+  "formal_dp_enabled": false,
+  "formal_dp_gate": {
+    "add_remove_accounting": true,
+    "checkpoint_schema_and_secret_audit": false,
+    "conservative_state_estimates": true,
+    "environment": true,
+    "fit": true,
+    "fresh_process_repeated_sample": true,
+    "persist": true,
+    "public_false_source_audit": true
+  },
+  "functional": {
+    "checkpoint_audit": {
+      "checkpoint_bytes": 10137,
+      "checkpoint_files": [
+        {
+          "path": "generative_model/estimator.pickle",
+          "sha256": "4b30fcfb807bf5cac8ec01c6454dd510eee25a7bf4e97cb99d807cea7965c431",
+          "size_bytes": 6068
+        },
+        {
+          "path": "generative_model/model_type.json",
+          "sha256": "d4ad4b5cbacefd9ca4bbb41eadd154c4b183cea966ea093516f2ddabcfa27577",
+          "size_bytes": 5
+        },
+        {
+          "path": "generative_model/state.joblib",
+          "sha256": "5f77199292065dd0da4d82b4e11ff613a039a99bef5d81ac9495fc326ffad06b",
+          "size_bytes": 4064
+        }
+      ],
+      "checks": {
+        "no_private_rng_state_or_seed_pattern": false,
+        "no_raw_dataframe_or_rows": true,
+        "no_source_path_or_marker": true,
+        "no_unnoised_measurements": true,
+        "recursive_schema_inspection_complete": true
+      },
+      "deserialization_errors": [],
+      "forbidden_findings": [
+        {
+          "code": "RNG_STATE_SERIALIZED",
+          "detail": "serialized RandomState matches the private fit RNG state",
+          "object_path": "generative_model/estimator.pickle.junction_tree._prng"
+        },
+        {
+          "code": "RNG_STATE_SERIALIZED",
+          "detail": "serialized RandomState matches the private fit RNG state",
+          "object_path": "generative_model/state.joblib['compressor'].prng"
+        }
+      ],
+      "passed": false,
+      "recursive_objects_inspected": 277,
+      "recursive_scan_truncated": false
+    },
+    "fit": {
+      "baseline_peak_rss_bytes": 162365440,
+      "checks": {
+        "fit_state_trained": true,
+        "n_jobs_is_one": true,
+        "pipeline_is_mst": true,
+        "private_seed_not_disclosed": true,
+        "processing_disabled": true,
+        "public_argument_is_false": true,
+        "public_domain_exact": true
+      },
+      "configuration": {
+        "delta": 1e-06,
+        "disable_processing": true,
+        "epsilon": 3.0,
+        "max_model_size_mib": 512,
+        "n_jobs": 1,
+        "pipeline": "MSTPipeline",
+        "public": false
+      },
+      "dpmm_reported_model_size": 9.441375732421875e-05,
+      "fit_wall_seconds": 12.914976291009225,
+      "fixture": {
+        "columns": 5,
+        "domain": {
+          "active": 3,
+          "age_bin": 5,
+          "region": 4,
+          "segment": 3,
+          "tenure_bin": 6
+        },
+        "missing_sentinel": {
+          "active": 2,
+          "age_bin": 4,
+          "region": 3,
+          "segment": 2,
+          "tenure_bin": 5
+        },
+        "public": true,
+        "rows": 4096
+      },
+      "passed": true,
+      "peak_rss_bytes": 167133184,
+      "private_fit_rng": {
+        "commitment": "642e615ad8ae0392885e7ca73ad0b2a6c070f0eede22b8f2bd29e546c26d1b0e",
+        "entropy_source": "secrets.token_bytes(32)",
+        "numpy_initialization": "Seed material array passed to numpy.random.RandomState",
+        "seed_disclosed": false
+      }
+    },
+    "fresh_process_repeated_generation": {
+      "batch_count": 2,
+      "batch_size": 10000,
+      "batches": [
+        {
+          "columns": 5,
+          "content_digest": "1a85a9bfcb279b41c609b717b7c158bc2ec882e6c8fdf6686a37ad753d23d365",
+          "index": 0,
+          "passed": true,
+          "rows": 10000,
+          "sampling_seed": 1048583,
+          "validation": {
+            "column_order_exact": true,
+            "integer_values": true,
+            "no_nulls": true,
+            "values_in_public_domain": true
+          }
+        },
+        {
+          "columns": 5,
+          "content_digest": "db57e29e9d07f099a9df5998311ef5adb631706caa866ba6d7ecdacfd5d85c51",
+          "index": 1,
+          "passed": true,
+          "rows": 10000,
+          "sampling_seed": 1114120,
+          "validation": {
+            "column_order_exact": true,
+            "integer_values": true,
+            "no_nulls": true,
+            "values_in_public_domain": true
+          }
+        }
+      ],
+      "distinct_batch_digests": true,
+      "exact_total": true,
+      "exit_code": 0,
+      "fresh_process_pid_differs": true,
+      "passed": true,
+      "peak_rss_bytes": 173604864,
+      "pid": 73349,
+      "source_dataframe_available": false,
+      "source_manifest_opened": false,
+      "stderr_empty": true,
+      "stdout_empty": true,
+      "total_rows": 20000,
+      "wall_seconds": 1.0231485840049572,
+      "wall_seconds_parent_observed": 1.1255623750039376
+    },
+    "passed": false,
+    "persist": {
+      "checks": {
+        "checkpoint_directory_exists": true,
+        "estimator_file_exists": true,
+        "source_manifest_outside_checkpoint": true,
+        "state_file_exists": true
+      },
+      "passed": true,
+      "store_wall_seconds": 0.0012432499788701534
+    }
+  },
+  "peak_rss_bytes": 167133184,
+  "probe": "dpmm_contract",
+  "schema_version": "1.0",
+  "source_audit": {
+    "audit_scope": [
+      "public=False propagation",
+      "private Gaussian measurement branch",
+      "private exponential selection with sensitivity 1",
+      "rho split constants",
+      "cDP conversion implementation"
+    ],
+    "checks": {
+      "cdp_conversion_functions_callable": true,
+      "mechanism_forwards_public_to_private_fit": true,
+      "mechanism_public_default_false": true,
+      "mst_one_way_measure_forwards_public": true,
+      "mst_private_default_false": true,
+      "mst_selection_public_default_false": true,
+      "mst_selection_unit_sensitivity": true,
+      "mst_sigma_allocates_one_third_rho": true,
+      "mst_two_way_measure_uses_private_default": true,
+      "pipeline_forwards_public_argument": true,
+      "pipeline_public_default_false": true,
+      "private_measurement_adds_gaussian_noise": true,
+      "public_measurement_is_exact_only_in_public_branch": true
+    },
+    "installed_source_files": [
+      {
+        "path": "pipelines/base.py",
+        "sha256": "896c05e07b375fc063a0b46bb21ee20e4f9476cbbe06876bed302aed7a47aff4"
+      },
+      {
+        "path": "models/base/mechanisms/mechanism.py",
+        "sha256": "c5e27747783d2d41b6b3273907899cbdaa473084b275cbcb0b37f1ed55a24d2b"
+      },
+      {
+        "path": "models/mst.py",
+        "sha256": "e4210e9afa4482e4bd981b5d5e3b2a2b2a81104809861e3978396154c6e5b556"
+      },
+      {
+        "path": "models/base/mechanisms/cdp2adp.py",
+        "sha256": "23e925476df00723e6e717c6865c623f300e749c1d4260dc6809bab479df9030"
+      }
+    ],
+    "passed": true
+  },
+  "state_estimates": {
+    "admission_uses_upstream_model_size_alone": false,
+    "capacity_estimator_version": 1,
+    "formula": "8*(one_way_cells+sum_largest_d_minus_1_pair_cells)*8_safety_factor",
+    "largest_pair_limit_cells": 1000000,
+    "passed": true,
+    "scenarios": [
+      {
+        "app_estimated_state_bytes": 29491200,
+        "app_to_upstream_implied_bytes_ratio": 516.0044092173639,
+        "checks": {
+          "app_estimate_not_less_than_raw_float64_state": true,
+          "app_state_within_512_mib": true,
+          "largest_pair_cells_within_limit": true,
+          "modeled_columns_at_most_32": true,
+          "states_per_column_at_most_256": true
+        },
+        "columns": 8,
+        "largest_pair_cells": 65536,
+        "one_way_cells": 2048,
+        "passed": true,
+        "raw_float64_state_bytes": 3686400,
+        "selected_largest_pair_cells": 458752,
+        "states_per_column": 256,
+        "upstream_model_size_reported_mib": 0.05450498872049539,
+        "upstream_reported_mib_implied_bytes": 57153
+      },
+      {
+        "app_estimated_state_bytes": 63176704,
+        "app_to_upstream_implied_bytes_ratio": 516.0062074260418,
+        "checks": {
+          "app_estimate_not_less_than_raw_float64_state": true,
+          "app_state_within_512_mib": true,
+          "largest_pair_cells_within_limit": true,
+          "modeled_columns_at_most_32": true,
+          "states_per_column_at_most_256": true
+        },
+        "columns": 16,
+        "largest_pair_cells": 65536,
+        "one_way_cells": 4096,
+        "passed": true,
+        "raw_float64_state_bytes": 7897088,
+        "selected_largest_pair_cells": 983040,
+        "states_per_column": 256,
+        "upstream_model_size_reported_mib": 0.11676179805901679,
+        "upstream_reported_mib_implied_bytes": 122434
+      },
+      {
+        "app_estimated_state_bytes": 130547712,
+        "app_to_upstream_implied_bytes_ratio": 516.007019873832,
+        "checks": {
+          "app_estimate_not_less_than_raw_float64_state": true,
+          "app_state_within_512_mib": true,
+          "largest_pair_cells_within_limit": true,
+          "modeled_columns_at_most_32": true,
+          "states_per_column_at_most_256": true
+        },
+        "columns": 32,
+        "largest_pair_cells": 65536,
+        "one_way_cells": 8192,
+        "passed": true,
+        "raw_float64_state_bytes": 16318464,
+        "selected_largest_pair_cells": 2031616,
+        "states_per_column": 256,
+        "upstream_model_size_reported_mib": 0.2412754167360596,
+        "upstream_reported_mib_implied_bytes": 252996
+      }
+    ],
+    "state_limit_bytes": 536870912
+  },
+  "status": "failed",
+  "wall_seconds": 15.382842542021535
+}

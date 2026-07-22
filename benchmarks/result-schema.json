@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://synthetic-table-studio.local/schemas/benchmark-result-1.0.json",
+  "title": "Synthetic Table Studio M4 verification result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "capacity_estimator_version",
+    "verification",
+    "status",
+    "started_at",
+    "completed_at",
+    "configuration",
+    "host",
+    "gates",
+    "resources",
+    "artifacts",
+    "engine_benchmark",
+    "error"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "capacity_estimator_version": {"const": 1},
+    "verification": {"enum": ["sample-m4", "scale-m4"]},
+    "status": {"enum": ["passed", "failed"]},
+    "started_at": {"type": "string", "format": "date-time"},
+    "completed_at": {"type": "string", "format": "date-time"},
+    "configuration": {"type": "object"},
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["platform", "machine", "python", "duckdb"],
+      "properties": {
+        "platform": {"type": "string"},
+        "machine": {"type": "string"},
+        "python": {"type": "string"},
+        "duckdb": {"type": "string"}
+      }
+    },
+    "gates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "status", "observed", "expected"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "status": {"enum": ["passed", "failed", "unavailable", "skipped"]},
+          "observed": {},
+          "expected": {},
+          "message": {"type": "string"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "resources": {
+      "type": "object",
+      "required": [
+        "peak_process_tree_rss_bytes",
+        "rss_limit_bytes",
+        "duckdb_memory_limit",
+        "spill_bytes_observed",
+        "spill_required"
+      ],
+      "properties": {
+        "peak_process_tree_rss_bytes": {"type": "integer", "minimum": 0},
+        "rss_limit_bytes": {"type": "integer", "minimum": 1},
+        "duckdb_memory_limit": {"type": "string"},
+        "worker_rss_limit_bytes": {"type": "integer", "minimum": 1},
+        "spill_bytes_observed": {"type": "integer", "minimum": 0},
+        "spill_required": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kind", "path", "size_bytes", "sha256"],
+        "properties": {
+          "kind": {"type": "string", "minLength": 1},
+          "path": {"type": "string", "minLength": 1},
+          "size_bytes": {"type": "integer", "minimum": 0},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        },
+        "additionalProperties": true
+      }
+    },
+    "engine_benchmark": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reason_code", "implementations", "noninferiority"],
+      "properties": {
+        "status": {"enum": ["unavailable", "completed"]},
+        "reason_code": {"type": "string", "minLength": 1},
+        "implementations": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["argn", "forestflow", "arf"],
+          "properties": {
+            "argn": {"$ref": "#/$defs/implementation"},
+            "forestflow": {"$ref": "#/$defs/implementation"},
+            "arf": {"$ref": "#/$defs/implementation"}
+          }
+        },
+        "noninferiority": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "passed", "reason_code", "metrics"],
+          "properties": {
+            "status": {"enum": ["not_evaluated", "passed", "failed"]},
+            "passed": {"type": ["boolean", "null"]},
+            "reason_code": {"type": "string", "minLength": 1},
+            "metrics": {"type": ["object", "null"]}
+          }
+        }
+      }
+    },
+    "error": {
+      "type": ["object", "null"],
+      "properties": {
+        "type": {"type": "string"},
+        "message": {"type": "string"}
+      },
+      "required": ["type", "message"],
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "implementation": {
+      "type": "object",
+      "required": ["status", "pinned"],
+      "properties": {
+        "status": {
+          "enum": ["available", "unavailable", "functional_run_completed", "benchmark_completed"]
+        },
+        "pinned": {"type": "boolean"},
+        "reason_code": {"type": "string"},
+        "distribution": {"type": "string"},
+        "version": {"type": "string"},
+        "wheel_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      },
+      "additionalProperties": true
+    }
+  }
+}

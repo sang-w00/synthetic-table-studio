@@ -1,0 +1,24 @@
+"""Synthetic Table Studio TabularARGN worker package."""
+
+__version__ = "0.1.0"
+
+from .adapter import (
+    BOUNDED_SAMPLE_SNAPSHOT_KEY,
+    CHECKPOINT_TAG_FILENAME,
+    ENGINE_VERSION,
+    ENGINE_WHEEL_SHA256,
+    MAX_CANDIDATE_ROWS,
+    MIN_CANDIDATE_ROWS,
+    MULTIPROCESS_CLONES_ENABLED,
+)
+
+__all__ = [
+    "BOUNDED_SAMPLE_SNAPSHOT_KEY",
+    "CHECKPOINT_TAG_FILENAME",
+    "ENGINE_VERSION",
+    "ENGINE_WHEEL_SHA256",
+    "MAX_CANDIDATE_ROWS",
+    "MIN_CANDIDATE_ROWS",
+    "MULTIPROCESS_CLONES_ENABLED",
+    "__version__",
+]
