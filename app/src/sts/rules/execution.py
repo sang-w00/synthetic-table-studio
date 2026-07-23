@@ -10,7 +10,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_EVEN, Decimal, InvalidOperation
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 import duckdb
@@ -18,7 +18,14 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
-from sts.domain import ColumnKind, ColumnSchema, DomainError, ErrorCode
+from sts.domain import (
+    ColumnKind,
+    ColumnRole,
+    ColumnSchema,
+    DomainError,
+    ErrorCode,
+    IdentifierStrategy,
+)
 from sts.domain.canonical import canonical_json_bytes
 from sts.rules.models import (
     AllowedValuesRule,
@@ -35,6 +42,55 @@ from sts.rules.models import (
 
 if TYPE_CHECKING:
     from sts.rules.compiler import CompiledRules
+
+CANDIDATE_INDEX_COLUMN = "__sts_candidate_index__"
+
+
+def attach_candidate_indices(table: pa.Table, *, row_start: int) -> pa.Table:
+    """Attach the reserved global candidate ordinal used by identifier reconstruction."""
+
+    if CANDIDATE_INDEX_COLUMN in table.column_names:
+        raise DomainError(
+            ErrorCode.WORKER_FAILED,
+            "candidate output used a reserved internal column",
+            context={"column": CANDIDATE_INDEX_COLUMN},
+        )
+    return table.append_column(
+        CANDIDATE_INDEX_COLUMN,
+        pa.array(range(row_start, row_start + table.num_rows), type=pa.int64()),
+    )
+
+
+def _synthetic_uuid4(row_index: int) -> str:
+    digest = hashlib.sha256(f"synthetic-table-studio:{row_index}".encode()).digest()
+    return str(UUID(bytes=digest[:16], version=4))
+
+
+def regenerate_identifiers(
+    table: pa.Table,
+    compiled: CompiledRules,
+    *,
+    row_start: int,
+) -> pa.Table:
+    """Replace identifier columns with public, source-independent unique values."""
+
+    result = table
+    for column in compiled.columns:
+        if column.kind is not ColumnKind.IDENTIFIER:
+            continue
+        values = (
+            [str(index + 1) for index in range(row_start, row_start + table.num_rows)]
+            if column.identifier_strategy is IdentifierStrategy.SEQUENTIAL
+            else [_synthetic_uuid4(index) for index in range(row_start, row_start + table.num_rows)]
+        )
+        field_index = result.schema.get_field_index(column.name)
+        identifier_array = pa.array(values, type=pa.string())
+        if field_index < 0:
+            result = result.append_column(column.name, identifier_array)
+        else:
+            result = result.set_column(field_index, column.name, identifier_array)
+    return result
+
 
 _INT64_MIN = -(2**63)
 _INT64_MAX = 2**63 - 1
@@ -645,6 +701,7 @@ def prepare_model_batch(
     compiled: CompiledRules,
     *,
     codecs: StructuralCodecs | None = None,
+    retain_non_model: bool = False,
 ) -> pa.Table:
     """Apply masking and structural encoding to one bounded source batch."""
 
@@ -672,6 +729,13 @@ def prepare_model_batch(
             for row in rows:
                 row[latent] = _encode_compare(row, rule, schema)
                 row.pop(rule.right, None)
+    if not retain_non_model:
+        non_model_columns = {
+            column.name for column in compiled.columns if column.role is not ColumnRole.MODEL
+        }
+        for row in rows:
+            for column_name in non_model_columns:
+                row.pop(column_name, None)
     return pa.Table.from_pylist(rows)
 
 
@@ -690,6 +754,29 @@ def reconstruct_batch(
     codecs = codecs or _build_codecs(compiled)
     schema = _schema_map(compiled)
     rows = _table_rows(batch)
+    identifiers = tuple(
+        column for column in compiled.columns if column.kind is ColumnKind.IDENTIFIER
+    )
+    for row in rows:
+        has_candidate_index = CANDIDATE_INDEX_COLUMN in row
+        candidate_index = row.pop(CANDIDATE_INDEX_COLUMN, None)
+        if not identifiers or not has_candidate_index:
+            continue
+        try:
+            if isinstance(candidate_index, bool):
+                raise ValueError
+            index = int(candidate_index)
+            if index != candidate_index or index < 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            _mark_invalid(row)
+            index = 0
+        for column in identifiers:
+            row[column.name] = (
+                str(index + 1)
+                if column.identifier_strategy is IdentifierStrategy.SEQUENTIAL
+                else _synthetic_uuid4(index)
+            )
     for rule in compiled.reconstruction_phase:
         if isinstance(rule, FixedCombinationRule):
             tuples = codecs.tuples_for(rule)

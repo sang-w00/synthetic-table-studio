@@ -238,6 +238,8 @@ export interface ArtifactList {
 export interface PrimaryReport {
   version?: string;
   summary?: Record<string, string | number | null>;
+  narrative?: string[];
+  evaluation?: PrimaryReport;
   columns?: Array<{
     name: string;
     metric?: string;

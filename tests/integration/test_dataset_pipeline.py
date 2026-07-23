@@ -109,6 +109,25 @@ def _valid_schema(*, bad_amount: bool = False) -> list[dict]:
     ]
 
 
+def test_high_cardinality_values_are_proposed_as_identifiers_for_confirmation(
+    dataset_client,
+) -> None:
+    client, _, _ = dataset_client
+    content = b"Index,note\n" + b"".join(
+        f"Row{index},group-{index % 3}\n".encode() for index in range(400)
+    )
+    dataset_id, _ = _create_and_inspect_csv(client, content)
+
+    assert client.post(f"/api/v1/datasets/{dataset_id}/profile").status_code == 202
+    profile = client.get(f"/api/v1/datasets/{dataset_id}/profile?view=raw").json()
+    columns = {column["name"]: column for column in profile["columns"]}
+
+    assert columns["Index"]["candidate_type"] == "identifier"
+    assert columns["Index"]["candidate_requires_confirmation"] is True
+    assert columns["Index"]["candidate_alternatives"] == ["text"]
+    assert columns["note"]["candidate_type"] == "categorical"
+
+
 def test_real_csv_upload_profile_schema_normalize_and_sse(dataset_client) -> None:
     client, service, layout = dataset_client
     content = (

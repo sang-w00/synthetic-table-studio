@@ -244,7 +244,7 @@ export function App() {
   const [stage, setStage] = useState<Stage>("upload");
   const [highestStage, setHighestStage] = useState(0);
   const [sessionReady, setSessionReady] = useState(false);
-  const [globalStatus, setGlobalStatus] = useState("Interface ready. 로컬 보안 세션을 준비하고 있습니다.");
+  const [globalStatus, setGlobalStatus] = useState("준비 중입니다.");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -301,11 +301,11 @@ export function App() {
       .bootstrap()
       .then(() => {
         setSessionReady(true);
-        setGlobalStatus("Interface ready. 보안 세션이 준비되었습니다.");
+        setGlobalStatus("준비되었습니다.");
       })
       .catch((bootstrapError: unknown) => {
         setError(`SESSION_REQUIRED: ${displayError(bootstrapError)}`);
-        setGlobalStatus("Interface ready. 보안 세션을 열지 못했습니다.");
+        setGlobalStatus("초기화에 실패했습니다.");
       });
     return () => eventSource.current?.close();
   }, []);
@@ -494,7 +494,11 @@ export function App() {
         api.getPrimaryReport(jobId),
         api.getArtifacts(jobId),
       ]);
-      setReport(reportPayload);
+      const evaluation = reportPayload.evaluation ?? reportPayload;
+      setReport({
+        ...evaluation,
+        narrative: reportPayload.narrative ?? evaluation.narrative,
+      });
       setArtifacts(artifactPayload.artifacts);
       setGlobalStatus("합성 데이터와 품질 보고서가 준비되었습니다.");
       moveTo("report");
@@ -643,14 +647,7 @@ export function App() {
       <a className="skip-link" href="#main-content">본문으로 건너뛰기 / Skip to main content</a>
 
       <header className="site-header">
-        <div>
-          <p className="site-kicker">Local workspace · 127.0.0.1</p>
-          <p className="site-name">Synthetic Table Studio</p>
-        </div>
-        <p className="session-mark" data-ready={sessionReady ? "true" : "false"}>
-          <span aria-hidden="true">{sessionReady ? "✓" : "…"}</span>
-          {sessionReady ? "호스트 전용 세션" : "세션 확인 중"}
-        </p>
+        <h1 className="site-name">Synthetic Table Studio</h1>
       </header>
 
       <nav className="step-rail" aria-label="합성 데이터 생성 단계">
@@ -672,11 +669,6 @@ export function App() {
       </nav>
 
       <main id="main-content" className="main-content" tabIndex={-1}>
-        <header className="page-intro">
-          <p className="section-label">Guided synthesis workflow</p>
-          <h1>A careful workspace for synthetic data — 로컬 합성 데이터 작업실</h1>
-          <p>원본을 원격 서비스로 보내지 않고, 각 결정과 공개 경계를 확인하며 합성 테이블을 만듭니다.</p>
-        </header>
 
         <div className="global-status" role="status" aria-live="polite">
           <span aria-hidden="true">{error ? "!" : sessionReady ? "✓" : "…"}</span>
@@ -800,11 +792,71 @@ export function App() {
             <>
               <div className="stage-heading-row"><div><p className="section-label">04 · Method</p><h2 id="stage-heading" tabIndex={-1}>생성 모드와 자원</h2></div><p className="stage-note">M4 로컬 기본 lease</p></div>
               <div className="mode-grid" role="radiogroup" aria-label="합성 모드">
-                <label className="mode-card selected"><input type="radio" name="mode" value="utility" checked readOnly /><span className="mode-tag">사용 가능</span><strong>일반 고품질 합성</strong><span>TabularARGN · 관계와 조건부 분포 중심</span><em>이 일반 합성 모드는 개인정보 보호를 보장하지 않습니다.</em></label>
-                <label className="mode-card disabled" aria-describedby="dp-audit dp-boundary"><input type="radio" name="mode" value="differential_privacy" disabled /><span className="mode-tag">감사 실패 · 사용 불가</span><strong>형식적 차등프라이버시</strong><span>MST · 행 단위 add/remove 인접성</span><em id="dp-audit">검증된 Phase 0 체크포인트 감사의 checkpoint_schema_and_secret_audit 게이트가 실패했습니다. 원본 경로, 원시 DataFrame, 비노이즈 측정값, 비공개 fit seed가 체크포인트에 남지 않는다는 증거가 없어 formal_dp_enabled=false입니다.</em></label>
+                <label className="mode-card selected">
+                  <input type="radio" name="mode" value="utility" checked readOnly />
+                  <span className="mode-tag">사용 가능</span>
+                  <strong>일반 고품질 합성</strong>
+                  <span>TabularARGN · 관계와 조건부 분포 중심</span>
+                  <em>
+                    원본의 분포와 열 관계를 학습하지만, ε/δ로 보정된 노이즈를 쓰지 않습니다.
+                    희귀값이나 특이한 조합이 재현될 수 있으므로 멤버십·속성 추론에 대한 수학적
+                    보호 보장은 없습니다.
+                  </em>
+                </label>
+                <label className="mode-card disabled" aria-describedby="dp-audit dp-boundary">
+                  <input type="radio" name="mode" value="differential_privacy" disabled />
+                  <span className="mode-tag">안전 감사 실패 · 사용 불가</span>
+                  <strong>형식적 차등프라이버시</strong>
+                  <span>MST · 행 단위 add/remove 인접성</span>
+                  <em id="dp-audit">
+                    고정된 dpmm 0.1.9 체크포인트가 학습에 사용한 비공개 난수 상태를 직렬화합니다.
+                    새 프로세스가 공개 가능한 정보만 읽는다는 secret audit를 통과하지 못해
+                    formal_dp_enabled=false로 닫혀 있습니다. 품질 문제가 아니라 DP 증명 경계가
+                    깨지는 문제이므로 자동 우회하지 않습니다.
+                  </em>
+                </label>
               </div>
-              <div id="dp-boundary" className="boundary-note"><strong>DP 공개 경계 — 현재는 실행할 수 없습니다</strong><dl><div><dt>모델링 열</dt><dd>공개 codebook·범위·bin·category가 검증된 최대 32개</dd></div><div><dt>제외 열</dt><dd>비공개 텍스트와 미검증 열은 DP 출력에서 완전히 제외</dd></div><div><dt>파생 열</dt><dd>공개 수식으로만 학습 후 재구성</dd></div><div><dt>공개 산출물</dt><dd>release_safe=true이며 contains_private_source_information=false인 결과와 보고서만 경계 안</dd></div></dl></div>
-              <fieldset className="resource-form"><legend>일반 합성 실행 설정</legend><div className="form-grid three"><label>출력 행 수<input type="number" min={1} max={55_000_000} value={outputRows} onChange={(event) => setOutputRows(Number(event.target.value))} /></label><label>학습 표본 상한<input type="number" min={1} max={250_000} value={trainingRows} onChange={(event) => setTrainingRows(Number(event.target.value))} /><small>이 호스트 기본 상한 250,000행</small></label><label>자원 프로필<select value={resourceProfile} onChange={(event) => setResourceProfile(event.target.value)}><option value="m4_local">M4 로컬 · 24 GiB worker</option><option value="m4_conservative">M4 보수적 · CPU</option></select></label><label>최대 epoch<input type="number" min={1} max={100} value={maxEpochs} onChange={(event) => setMaxEpochs(Number(event.target.value))} /></label><label>최대 학습 시간 (분)<input type="number" min={1} max={1440} value={maxMinutes} onChange={(event) => setMaxMinutes(Number(event.target.value))} /></label><label>모델 크기<select value={modelSize} onChange={(event) => setModelSize(event.target.value)}><option value="small">Small</option><option value="medium">Medium</option><option value="large">Large</option></select></label><label>실행 장치<select value={device} onChange={(event) => setDevice(event.target.value)}><option value="cpu">CPU (검증됨)</option><option value="mps" disabled>MPS (parity gate 필요)</option></select></label><label>생성 seed<input type="number" min={0} max={4_294_967_295} value={generationSeed} onChange={(event) => setGenerationSeed(Number(event.target.value))} /></label></div><fieldset className="format-fieldset"><legend>출력 형식</legend><label className="checkbox-row"><input type="checkbox" checked={outputFormats.includes("parquet")} onChange={(event) => setOutputFormats((current) => event.target.checked ? [...new Set([...current, "parquet" as const])] : current.filter((value) => value !== "parquet"))} />Parquet shards + ZIP64 manifest</label><label className="checkbox-row"><input type="checkbox" checked={outputFormats.includes("csv")} onChange={(event) => setOutputFormats((current) => event.target.checked ? [...new Set([...current, "csv" as const])] : current.filter((value) => value !== "csv"))} />CSV</label></fieldset></fieldset>
+              <div id="dp-boundary" className="boundary-note">
+                <strong>DP 공개 경계란?</strong>
+                <p>
+                  원본을 볼 수 있는 내부 작업 영역과 외부로 내보낼 수 있는 산출물 사이의 선입니다.
+                  형식적 DP에서는 이 선 밖으로 DP 메커니즘의 결과와 사전에 공개한 메타데이터만
+                  나가야 합니다.
+                </p>
+                <dl>
+                  <div><dt>경계 안</dt><dd>원본, 비공개 프로파일, 학습 체크포인트, 내부 진단 보고서</dd></div>
+                  <div><dt>경계 밖</dt><dd>release_safe=true이고 원본 정보를 포함하지 않는 결과와 공개 보고서만 허용</dd></div>
+                  <div><dt>지원 범위</dt><dd>공개 범위·범주가 정해진 모델링 열 최대 32개와 공개 수식 파생 열</dd></div>
+                  <div><dt>현재 상태</dt><dd>감사 실패로 DP 결과를 생성하거나 공개 가능한 DP 결과라고 표시하지 않음</dd></div>
+                </dl>
+              </div>
+              <aside className="guidance-panel" aria-labelledby="training-guidance-heading">
+                <h3 id="training-guidance-heading">권장 학습 설정</h3>
+                <ul>
+                  <li><strong>1 epoch</strong><span>업로드·규칙·다운로드가 동작하는지 빠르게 확인할 때</span></li>
+                  <li><strong>5 epoch</strong><span>현재 sample gate를 통과한 기본 권장값. 첫 품질 비교에 사용</span></li>
+                  <li><strong>10 epoch 이상</strong><span>시간이 더 들며 자동으로 더 좋아지지는 않음. 보고서 지표를 비교해 결정</span></li>
+                  <li><strong>Small 모델</strong><span>현재 adapter와 M4에서 검증된 유일한 크기. Medium/Large는 검증 전까지 선택 불가</span></li>
+                </ul>
+              </aside>
+              <fieldset className="resource-form">
+                <legend>일반 합성 실행 설정</legend>
+                <div className="form-grid three">
+                  <label>출력 행 수<input type="number" min={1} max={55_000_000} value={outputRows} onChange={(event) => setOutputRows(Number(event.target.value))} /></label>
+                  <label>학습 표본 상한<input type="number" min={1} max={250_000} value={trainingRows} onChange={(event) => setTrainingRows(Number(event.target.value))} /><small>이 호스트 기본 상한 250,000행</small></label>
+                  <label>자원 프로필<select value={resourceProfile} onChange={(event) => setResourceProfile(event.target.value)}><option value="m4_local">M4 로컬 · 24 GiB worker</option><option value="m4_conservative">M4 보수적 · CPU</option></select></label>
+                  <label>최대 epoch<input type="number" min={1} max={100} value={maxEpochs} onChange={(event) => setMaxEpochs(Number(event.target.value))} /><small>첫 실행 권장: 5</small></label>
+                  <label>최대 학습 시간 (분)<input type="number" min={1} max={1440} value={maxMinutes} onChange={(event) => setMaxMinutes(Number(event.target.value))} /></label>
+                  <label>모델 크기<select value={modelSize} onChange={(event) => setModelSize(event.target.value)}><option value="small">Small · 검증됨</option><option value="medium" disabled>Medium · 미검증</option><option value="large" disabled>Large · 미검증</option></select></label>
+                  <label>실행 장치<select value={device} onChange={(event) => setDevice(event.target.value)}><option value="cpu">CPU (검증됨)</option><option value="mps" disabled>MPS (parity gate 필요)</option></select></label>
+                  <label>생성 seed<input type="number" min={0} max={4_294_967_295} value={generationSeed} onChange={(event) => setGenerationSeed(Number(event.target.value))} /></label>
+                </div>
+                <fieldset className="format-fieldset">
+                  <legend>출력 형식</legend>
+                  <label className="checkbox-row"><input type="checkbox" checked={outputFormats.includes("parquet")} onChange={(event) => setOutputFormats((current) => event.target.checked ? [...new Set([...current, "parquet" as const])] : current.filter((value) => value !== "parquet"))} />Parquet shards + ZIP64 manifest</label>
+                  <label className="checkbox-row"><input type="checkbox" checked={outputFormats.includes("csv")} onChange={(event) => setOutputFormats((current) => event.target.checked ? [...new Set([...current, "csv" as const])] : current.filter((value) => value !== "csv"))} />CSV</label>
+                </fieldset>
+              </fieldset>
               <div className="action-row"><p>시작 전 디스크·RAM admission을 통과하지 못하면 산출물을 만들지 않습니다.</p><button className="button primary" type="button" disabled={busy || outputFormats.length === 0} onClick={() => void createJob()}>일반 합성 시작</button></div>
             </>
           )}
@@ -825,7 +877,7 @@ export function App() {
               <div className="report-callout"><span aria-hidden="true">!</span><p><strong>개인정보 보호 보장 없음</strong>이 일반 합성 결과와 품질 보고서는 형식적 DP 공개 산출물이 아닙니다. 다운로드 전에 조직의 공개 기준을 별도로 검토하세요.</p></div>
               <div className="report-tabs">
                 <div role="tablist" aria-label="보고서 보기">{(["summary", "columns", "boundary"] as ReportTab[]).map((tab) => <button key={tab} type="button" role="tab" aria-selected={reportTab === tab} aria-controls={`report-${tab}`} id={`tab-${tab}`} tabIndex={reportTab === tab ? 0 : -1} onClick={() => setReportTab(tab)} onKeyDown={(event) => navigateReportTabs(event, tab)}>{tab === "summary" ? "품질 요약" : tab === "columns" ? "열별 거리" : "공개 경계"}</button>)}</div>
-                {reportTab === "summary" && <div role="tabpanel" id="report-summary" aria-labelledby="tab-summary"><ReportSummary report={report} /><ReportChart report={report} /></div>}
+                {reportTab === "summary" && <div role="tabpanel" id="report-summary" aria-labelledby="tab-summary"><ReportNarrative report={report} /><ReportSummary report={report} /><ReportChart report={report} /></div>}
                 {reportTab === "columns" && <div role="tabpanel" id="report-columns" aria-labelledby="tab-columns"><ReportColumns report={report} /></div>}
                 {reportTab === "boundary" && <div role="tabpanel" id="report-boundary" aria-labelledby="tab-boundary"><div className="boundary-note utility"><strong>Utility / curator 경계</strong><p>원본 프로파일, holdout 품질, 공격 진단과 이 보고서는 private source information을 포함할 수 있으며 release_safe=false입니다. 경험적 공격 지표는 개인정보 보호 보증이 아닙니다.</p></div></div>}
               </div>
@@ -835,7 +887,6 @@ export function App() {
         </section>
       </main>
 
-      <footer className="site-footer"><p>이 컴퓨터에서만 실행 · 원격 asset 없음 · 세션은 서버 재시작 시 폐기</p><p>localhost는 자동으로 개인정보 보호를 보장하지 않습니다.</p></footer>
     </div>
   );
 }
@@ -865,6 +916,56 @@ function describeRule(rule: RuleSpec): string {
     case "compare": return `${rule.left} ${rule.op} ${rule.right}`;
   }
 }
+
+function reportNumber(report: PrimaryReport, key: string): number | null {
+  const value = report.summary?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function metricText(value: number | null, digits = 4): string {
+  return value === null
+    ? "계산되지 않음"
+    : value.toLocaleString("ko-KR", { maximumFractionDigits: digits });
+}
+
+function ReportNarrative({ report }: { report: PrimaryReport }) {
+  const requestedRows = reportNumber(report, "requested_rows");
+  const actualRows = reportNumber(report, "actual_rows");
+  const medianExcess = reportNumber(report, "median_excess");
+  const p95Excess = reportNumber(report, "p95_excess");
+  const maxExcess = reportNumber(report, "max_excess");
+  const columns = report.columns ?? [];
+  const missingness = columns
+    .filter((column) => typeof column.missingness_difference === "number")
+    .sort((left, right) => (right.missingness_difference ?? 0) - (left.missingness_difference ?? 0))[0];
+  return (
+    <section className="report-narrative" aria-labelledby="report-narrative-heading">
+      <h3 id="report-narrative-heading">보고서 해설</h3>
+      <p>
+        {metricText(requestedRows, 0)}행을 요청했고 실제 {metricText(actualRows, 0)}행이
+        생성되었습니다. 아래 품질 지표는 원본과 합성 데이터의 분포 유사도를 측정하며,
+        개인정보 보호 수준을 측정하지는 않습니다.
+      </p>
+      <p>
+        열별 기준선 초과 거리는 중앙값 {metricText(medianExcess)}, p95 {metricText(p95Excess)},
+        최댓값 {metricText(maxExcess)}입니다. 이 값은 원본 내부 표본 간 차이보다 합성 데이터가
+        얼마나 더 멀어진지를 나타내며 0에 가까울수록 좋습니다.
+      </p>
+      <p>
+        비교 가능한 열은 {columns.length.toLocaleString("ko-KR")}개입니다.
+        {missingness
+          ? ` 결측률 차이가 가장 큰 열은 ${missingness.name} (${metricText(missingness.missingness_difference ?? null)})입니다.`
+          : " 계산 가능한 결측률 차이는 없습니다."}
+      </p>
+      <p>
+        <code>_RARE_</code>는 ARGN이 학습 빈도가 낮은 범주를 하나로 묶을 때 사용하는 표식입니다.
+        식별자로 확인한 열은 모델 입력에서 제외하고 고유한 순번으로 다시 만듭니다. 일반 범주에서
+        이 표식을 허용하지 않으려면 허용값 규칙으로 출력 도메인을 명시하세요.
+      </p>
+    </section>
+  );
+}
+
 
 function ReportSummary({ report }: { report: PrimaryReport }) {
   const entries = Object.entries(report.summary ?? {}).filter(([, value]) => typeof value === "number" || typeof value === "string");

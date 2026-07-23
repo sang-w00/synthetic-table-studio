@@ -8,7 +8,14 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from sts.domain import ColumnKind, ColumnRole, ColumnSchema, DomainError, ErrorCode
+from sts.domain import (
+    ColumnKind,
+    ColumnRole,
+    ColumnSchema,
+    DomainError,
+    ErrorCode,
+    IdentifierStrategy,
+)
 from sts.rules.compiler import compile_rules
 from sts.rules.execution import (
     audit_and_filter_source,
@@ -16,6 +23,7 @@ from sts.rules.execution import (
     full_validate,
     mask_prefix,
     prepare_model_batch,
+    repair_and_validate_candidate,
     reconstruct_batch,
 )
 from sts.rules.models import (
@@ -492,6 +500,61 @@ def test_full_validator_covers_allowed_range_not_null_and_exact_sum() -> None:
     }
     assert checked.report.violation_union_count == 3
     assert checked.report.invalid_rows == (True, True, True)
+
+
+def test_global_rejection_reconstructs_identifier_columns_without_model_tokens(
+    tmp_path: Path,
+) -> None:
+    columns = (
+        ColumnSchema(
+            name="Index",
+            kind=ColumnKind.IDENTIFIER,
+            nullable=False,
+            role=ColumnRole.IDENTIFIER,
+            identifier_strategy=IdentifierStrategy.SEQUENTIAL,
+        ),
+        column("value", ColumnKind.INTEGER),
+    )
+    compiled = compile_rules(columns, ())
+    model_batch = prepare_model_batch(
+        pa.table({"Index": ["Row0", "Row1", "Row2"], "value": [10, 20, 30]}),
+        compiled,
+    )
+    assert model_batch.column_names == ["value"]
+    evaluation_batch = prepare_model_batch(
+        pa.table({"Index": ["Row0", "Row1", "Row2"], "value": [10, 20, 30]}),
+        compiled,
+        retain_non_model=True,
+    )
+    evaluation_result = repair_and_validate_candidate(evaluation_batch, compiled)
+    assert evaluation_result.report.violation_union_count == 0
+    assert evaluation_result.table.column("Index").to_pylist() == [
+        "Row0",
+        "Row1",
+        "Row2",
+    ]
+    coordinator = GlobalRejectionCoordinator(
+        compiled,
+        output_rows=3,
+        shard_count=1,
+        master_seed=42,
+    )
+
+    def provider(allocation):
+        return [
+            CandidateBatch(
+                candidate_start=allocation.candidate_start,
+                batch=pa.table({"value": [10, 20, 30]}),
+            )
+        ]
+
+    output_path = tmp_path / "synthetic-with-identifiers.parquet"
+    result = coordinator.run(provider, output_path)
+    output = pq.read_table(output_path).to_pydict()
+
+    assert result.actual_rows == 3
+    assert output == {"Index": ["1", "2", "3"], "value": [10, 20, 30]}
+    assert "_RARE_" not in output["Index"]
 
 
 def test_global_multi_shard_budget_exact_output_and_zero_post_violations(

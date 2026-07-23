@@ -53,6 +53,7 @@ from sts.jobs.utility import (
 from sts.reports import ArtifactSafety, build_utility_primary_report, publish_report_artifacts
 from sts.rules.execution import (
     StructuralCodecs,
+    attach_candidate_indices,
     prepare_model_batch,
     repair_and_validate_candidate,
 )
@@ -757,7 +758,8 @@ class UtilityJobRuntime:
                 table = _coerce_argn_batch(table, compiled)
                 if table.num_rows > budget_for_file:
                     table = table.slice(0, budget_for_file)
-                checked = repair_and_validate_candidate(table, compiled, codecs=codecs)
+                indexed = attach_candidate_indices(table, row_start=examined)
+                checked = repair_and_validate_candidate(indexed, compiled, codecs=codecs)
                 valid_rows += checked.report.valid_rows
                 examined += table.num_rows
                 budget_for_file -= table.num_rows
@@ -869,10 +871,14 @@ class UtilityJobRuntime:
                 [limit],
             ).to_arrow_table()
         train_final = repair_and_validate_candidate(
-            prepare_model_batch(train, compiled, codecs=codecs), compiled, codecs=codecs
+            prepare_model_batch(train, compiled, codecs=codecs, retain_non_model=True),
+            compiled,
+            codecs=codecs,
         ).table
         holdout_final = repair_and_validate_candidate(
-            prepare_model_batch(holdout, compiled, codecs=codecs), compiled, codecs=codecs
+            prepare_model_batch(holdout, compiled, codecs=codecs, retain_non_model=True),
+            compiled,
+            codecs=codecs,
         ).table
         evaluation_seed = request.generation_seed or int.from_bytes(
             hashlib.sha256(f"{record.job_id}:evaluation".encode()).digest()[:8], "big"

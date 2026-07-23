@@ -202,8 +202,14 @@ def test_reports_escape_injection_are_self_contained_and_preserve_privacy_bounda
         job_id=uuid4(),
         title=f"Quality {injection}",
         evaluation={
+            "summary": {
+                "requested_rows": 1_000,
+                "actual_rows": 1_000,
+                "median_excess": 0.1,
+                "p95_excess": 0.2,
+            },
+            "columns": [{"name": "category", "metric": "TVD", "distance": 0.2}],
             "column": injection,
-            "baseline_excess": {"median": 0.1, "p95": 0.2},
         },
     )
     html = utility.html_bytes().decode()
@@ -211,6 +217,8 @@ def test_reports_escape_injection_are_self_contained_and_preserve_privacy_bounda
     assert "&lt;img src=&#34;https://attacker.invalid/pixel&#34;" in html
     assert "No formal privacy guarantee" in html
     assert "<style>" in html and "<svg" in html
+    assert utility.document["narrative"]
+    assert "1,000" in utility.document["narrative"][0]
     assert "url(" not in html.lower() and "@import" not in html.lower()
     parser = _AssetParser()
     parser.feed(html)
@@ -225,6 +233,53 @@ def test_reports_escape_injection_are_self_contained_and_preserve_privacy_bounda
     assert internal.safety.release_safe is False
     assert internal.safety.contains_private_source_information is True
     assert injection not in internal.html_bytes().decode()
+
+
+def test_utility_report_projects_runtime_evaluation_into_readable_metrics() -> None:
+    report = build_utility_primary_report(
+        job_id=uuid4(),
+        evaluation={
+            "exact": {"requested_rows": 2_000, "actual_rows": 2_000},
+            "primary": {
+                "baseline_excess": {
+                    "median": {"value": 0.01},
+                    "p95": {"value": 0.02},
+                    "maximum": {"value": 0.03},
+                },
+                "columns": [
+                    {
+                        "name": "Index",
+                        "included_in_fidelity_aggregate": False,
+                    },
+                    {
+                        "name": "age",
+                        "included_in_fidelity_aggregate": True,
+                        "synthetic_distance": {"metric": "ks_distance", "value": 0.04},
+                        "baseline_excess": {"value": 0.01},
+                        "synthetic_missingness_difference": {"value": 0.0},
+                    },
+                ],
+            },
+        },
+    )
+
+    assert report.document["evaluation"]["summary"] == {
+        "requested_rows": 2_000,
+        "actual_rows": 2_000,
+        "median_excess": 0.01,
+        "p95_excess": 0.02,
+        "max_excess": 0.03,
+    }
+    assert report.document["evaluation"]["columns"] == [
+        {
+            "name": "age",
+            "metric": "ks_distance",
+            "distance": 0.04,
+            "baseline_excess": 0.01,
+            "missingness_difference": 0.0,
+        }
+    ]
+    assert "2,000" in report.document["narrative"][0]
 
 
 def test_dp_release_uses_positive_allowlists_and_recursively_excludes_private_fields() -> (

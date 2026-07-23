@@ -238,11 +238,15 @@ async function mockStudioApi(page: Page, sourceFormat: "csv" | "xlsx"): Promise<
         contentType: "application/json",
         body: JSON.stringify({
           version: "1.0",
-          summary: { requested_rows: 100000, actual_rows: 100000, median_excess: 0.021, p95_excess: 0.074 },
-          columns: [
-            { name: "age", metric: "KS", distance: 0.08, baseline_excess: 0.02, missingness_difference: 0.003 },
-            { name: "city", metric: "TVD", distance: 0.11, baseline_excess: 0.04, missingness_difference: 0 },
-          ],
+          report_kind: "utility_primary",
+          narrative: ["The downloadable report includes a metric-based narrative."],
+          evaluation: {
+            summary: { requested_rows: 100000, actual_rows: 100000, median_excess: 0.021, p95_excess: 0.074 },
+            columns: [
+              { name: "age", metric: "KS", distance: 0.08, baseline_excess: 0.02, missingness_difference: 0.003 },
+              { name: "city", metric: "TVD", distance: 0.11, baseline_excess: 0.04, missingness_difference: 0 },
+            ],
+          },
         }),
       });
       return;
@@ -289,7 +293,7 @@ test("CSV six-step flow uploads chunks, resolves conflicts, resumes, and reports
   const state = await mockStudioApi(page, "csv");
   await page.goto("/");
 
-  await expect(page.getByText("호스트 전용 세션")).toBeVisible();
+  await expect(page.getByRole("status")).toContainText("준비되었습니다");
   await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: /본문으로 건너뛰기/ })).toBeFocused();
 
@@ -326,8 +330,8 @@ test("CSV six-step flow uploads chunks, resolves conflicts, resumes, and reports
 
   await expect(page.getByRole("heading", { name: "생성 모드와 자원" })).toBeVisible();
   await expect(page.getByRole("radio", { name: /형식적 차등프라이버시/ })).toBeDisabled();
-  await expect(page.getByText(/checkpoint_schema_and_secret_audit/)).toContainText("formal_dp_enabled=false");
-  await expect(page.getByText(/이 일반 합성 모드는 개인정보 보호를 보장하지 않습니다/).first()).toBeVisible();
+  await expect(page.getByText(/secret audit/)).toContainText("formal_dp_enabled=false");
+  await expect(page.getByText(/수학적 보호 보장은 없습니다/).first()).toBeVisible();
   await page.getByRole("checkbox", { name: "CSV" }).check();
   await page.getByRole("button", { name: "일반 합성 시작" }).click();
 
@@ -340,6 +344,8 @@ test("CSV six-step flow uploads chunks, resolves conflicts, resumes, and reports
   await expect(page.getByRole("heading", { name: "품질 보고서와 산출물" })).toBeVisible();
   await expect(page.getByText("개인정보 보호 보장 없음")).toBeVisible();
   await expect(page.getByTestId("report-chart")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "보고서 해설" })).toBeVisible();
+  await expect(page.getByText(/100,000행을 요청했고 실제 100,000행/)).toBeVisible();
   const download = page.getByRole("link", { name: "파일 받기" }).first();
   await expect(download).toHaveAttribute("href", "/api/v1/artifacts/44444444-4444-4444-8444-444444444444/download");
   await expect(download).not.toHaveAttribute("download", /.+/);
@@ -378,7 +384,7 @@ test("XLSX sheet branch is keyboard-operable and responsive", async ({ page }) =
   await installMemoryAudit(page);
   await mockStudioApi(page, "xlsx");
   await page.goto("/");
-  await expect(page.getByText("호스트 전용 세션")).toBeVisible();
+  await expect(page.getByRole("status")).toContainText("준비되었습니다");
 
   await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: /본문으로 건너뛰기/ })).toBeFocused();

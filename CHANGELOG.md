@@ -12,6 +12,12 @@
 - Primary and optional advanced evaluation, release-safety filtering, canonical content hashes, and CSV/Parquet/XLSX exports.
 - M4 sample and 2M×70 scale verification harnesses, SBOM/integrity manifests, and real-backend Playwright smoke tests.
 
+### Changed
+
+- Replaced setup-oriented interface copy with a direct data-to-report workflow, explicit utility/DP boundaries, and workload-specific epoch/model guidance.
+- High-cardinality identifier candidates are now surfaced for confirmation, excluded columns stay out of model input, and generated identifiers are reconstructed deterministically after bounded rejection.
+- Utility reports now project the runtime evaluation into requested/generated row counts, baseline-excess summaries, and per-column distance tables with plain-language interpretation.
+
 ### Verified
 
 - Approved sample: SHA-256 `a268757667274304004d201726053d642c16b8ee5332a7045b2ae713aa7d9dd3`, 989,502 rows, 21 columns.

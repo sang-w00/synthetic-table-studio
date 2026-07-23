@@ -260,6 +260,95 @@ def _freeze_document(document: dict[str, Any]) -> Mapping[str, Any]:
     return MappingProxyType(document)
 
 
+def _format_metric(value: Any) -> str:
+    if isinstance(value, bool) or not isinstance(value, (int, float, Decimal)):
+        return "not available"
+    if isinstance(value, int):
+        return f"{value:,}"
+    return f"{float(value):.4f}"
+
+
+def _utility_presentation(evaluation: Mapping[str, Any]) -> dict[str, Any]:
+    """Project the runtime evaluation shape into stable report summary fields."""
+
+    document = dict(evaluation)
+    exact = evaluation.get("exact")
+    primary = evaluation.get("primary")
+    exact_mapping = exact if isinstance(exact, Mapping) else {}
+    primary_mapping = primary if isinstance(primary, Mapping) else {}
+    aggregate = primary_mapping.get("baseline_excess")
+    aggregate_mapping = aggregate if isinstance(aggregate, Mapping) else {}
+
+    if not isinstance(document.get("summary"), Mapping):
+
+        def aggregate_value(name: str) -> Any:
+            metric = aggregate_mapping.get(name)
+            return metric.get("value") if isinstance(metric, Mapping) else None
+
+        document["summary"] = {
+            "requested_rows": exact_mapping.get("requested_rows"),
+            "actual_rows": exact_mapping.get("actual_rows"),
+            "median_excess": aggregate_value("median"),
+            "p95_excess": aggregate_value("p95"),
+            "max_excess": aggregate_value("maximum"),
+        }
+
+    source_columns = primary_mapping.get("columns")
+    if (
+        not isinstance(document.get("columns"), Sequence)
+        or isinstance(document.get("columns"), (str, bytes, bytearray))
+    ) and isinstance(source_columns, Sequence):
+        projected_columns: list[dict[str, Any]] = []
+        for column in source_columns:
+            if not isinstance(column, Mapping) or not column.get("included_in_fidelity_aggregate"):
+                continue
+            synthetic = column.get("synthetic_distance")
+            excess = column.get("baseline_excess")
+            missingness = column.get("synthetic_missingness_difference")
+            synthetic_mapping = synthetic if isinstance(synthetic, Mapping) else {}
+            excess_mapping = excess if isinstance(excess, Mapping) else {}
+            missingness_mapping = missingness if isinstance(missingness, Mapping) else {}
+            projected_columns.append(
+                {
+                    "name": column.get("name"),
+                    "metric": synthetic_mapping.get("metric"),
+                    "distance": synthetic_mapping.get("value"),
+                    "baseline_excess": excess_mapping.get("value"),
+                    "missingness_difference": missingness_mapping.get("value"),
+                }
+            )
+        document["columns"] = projected_columns
+    return document
+
+
+def _utility_narrative(evaluation: Mapping[str, Any]) -> list[str]:
+    summary = evaluation.get("summary")
+    columns = evaluation.get("columns")
+    summary_mapping = summary if isinstance(summary, Mapping) else {}
+    column_count = (
+        len(columns)
+        if isinstance(columns, Sequence) and not isinstance(columns, (str, bytes, bytearray))
+        else 0
+    )
+    return [
+        (
+            f"The run requested {_format_metric(summary_mapping.get('requested_rows'))} rows "
+            f"and produced {_format_metric(summary_mapping.get('actual_rows'))} rows."
+        ),
+        (
+            "Across eligible columns, baseline-excess distance had a median of "
+            f"{_format_metric(summary_mapping.get('median_excess'))}, a 95th percentile of "
+            f"{_format_metric(summary_mapping.get('p95_excess'))}, and a maximum of "
+            f"{_format_metric(summary_mapping.get('max_excess'))}. Lower values are better."
+        ),
+        (
+            f"The column table contains {column_count:,} fidelity comparisons. "
+            "These utility metrics describe distributional similarity; they do not provide "
+            "a formal privacy guarantee."
+        ),
+    ]
+
+
 def build_utility_primary_report(
     *,
     job_id: UUID | str,
@@ -267,6 +356,7 @@ def build_utility_primary_report(
     artifacts: Sequence[Mapping[str, Any] | BaseModel] = (),
     title: str = "Synthetic Table Studio utility quality report",
 ) -> BuiltReport:
+    evaluation_document = _utility_presentation(_json_safe(_as_mapping(evaluation)))
     document = {
         "version": "1.0",
         "report_kind": "utility_primary",
@@ -274,7 +364,8 @@ def build_utility_primary_report(
         "title": title,
         "job_id": str(job_id),
         "privacy_notice": UTILITY_PRIVACY_WARNING,
-        "evaluation": _json_safe(_as_mapping(evaluation)),
+        "narrative": _utility_narrative(evaluation_document),
+        "evaluation": evaluation_document,
         "artifacts": [_json_safe(_as_mapping(artifact)) for artifact in artifacts],
         "release_safe": False,
         "contains_private_source_information": True,

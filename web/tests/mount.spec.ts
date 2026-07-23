@@ -7,11 +7,11 @@ test("mounts the accessible application shell", async ({ page }) => {
   await expect(
     page.getByRole("heading", {
       level: 1,
-      name: "A careful workspace for synthetic data",
+      name: "Synthetic Table Studio",
     }),
   ).toBeVisible();
   await expect(page.getByRole("main")).toBeVisible();
-  await expect(page.getByRole("status")).toContainText("Interface ready");
+  await expect(page.getByRole("status")).toContainText("준비되었습니다");
 
   await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: "Skip to main content" })).toBeFocused();

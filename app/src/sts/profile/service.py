@@ -12,6 +12,7 @@ from .models import ColumnProfile, DatasetProfile, ParseSuccess, ValueCount
 
 MAX_COLUMNS = 70
 LOW_CARDINALITY_LIMIT = 256
+IDENTIFIER_CARDINALITY_RATIO = 0.9
 
 
 def _sql_literal(value: str) -> str:
@@ -90,6 +91,13 @@ def _candidate(
         return ColumnKind.DATE, False, ()
     if parse.datetime == nonnull_count:
         return ColumnKind.DATETIME, False, ()
+    if (
+        nonnull_count > LOW_CARDINALITY_LIMIT
+        and approx_cardinality >= nonnull_count * IDENTIFIER_CARDINALITY_RATIO
+    ):
+        # approx_count_distinct is intentionally used only for a review-required proposal:
+        # HyperLogLog error and free-form unique text make silent identifier confirmation unsafe.
+        return ColumnKind.IDENTIFIER, True, (ColumnKind.TEXT,)
     if approx_cardinality <= LOW_CARDINALITY_LIMIT:
         return ColumnKind.CATEGORICAL, False, ()
     return ColumnKind.TEXT, False, ()

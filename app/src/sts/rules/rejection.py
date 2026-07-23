@@ -14,8 +14,10 @@ import pyarrow.parquet as pq
 from sts.domain import DomainError, ErrorCode
 from sts.rules.execution import (
     StructuralCodecs,
+    attach_candidate_indices,
     full_validate,
     iter_arrow_batches,
+    regenerate_identifiers,
     repair_and_validate_candidate,
 )
 
@@ -239,6 +241,7 @@ class GlobalRejectionCoordinator:
                             },
                         )
                     expected_index = candidate_stop
+                    table = attach_candidate_indices(table, row_start=candidate_start)
                     examined += table.num_rows
                     repaired, invalid = self._repair(table, self.compiled, self.codecs)
                     if len(invalid) != repaired.num_rows:
@@ -253,6 +256,7 @@ class GlobalRejectionCoordinator:
                     remaining = self.output_rows - accepted
                     if valid.num_rows > remaining:
                         valid = valid.slice(0, remaining)
+                    valid = regenerate_identifiers(valid, self.compiled, row_start=accepted)
                     if valid.num_rows:
                         if writer is None:
                             writer = pq.ParquetWriter(part, valid.schema, compression="zstd")

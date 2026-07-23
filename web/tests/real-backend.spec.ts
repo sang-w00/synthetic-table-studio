@@ -1,4 +1,4 @@
-import { stat, writeFile } from "node:fs/promises";
+import { readFile, stat, writeFile } from "node:fs/promises";
 
 import { expect, test } from "@playwright/test";
 import type {
@@ -114,7 +114,7 @@ async function openBootstrappedStudio(page: Page): Promise<void> {
 
   const bootstrap = await bootstrapResponse;
   expect(bootstrap.status(), "GET /api/v1/bootstrap must establish the host-only session").toBe(200);
-  await expect(page.getByText("호스트 전용 세션")).toBeVisible();
+  await expect(page.getByRole("status")).toContainText("준비되었습니다");
 
   const cookies = await page.context().cookies();
   expect(
@@ -170,9 +170,9 @@ async function writeAmbiguousCsv(path: string): Promise<number> {
   const segments = ["A", "B", "C", "D"];
   const rows = Array.from(
     { length: 1_200 },
-    (_, index) => `${18 + (index % 60)},${segments[index % segments.length]};`,
+    (_, index) => `Row${index},${18 + (index % 60)},${segments[index % segments.length]};;`,
   );
-  const content = `age,segment;\n${rows.join("\n")}\n`;
+  const content = `Index,age,segment;;\n${rows.join("\n")}\n`;
   await writeFile(path, content, "utf8");
   return Buffer.byteLength(content);
 }
@@ -421,8 +421,10 @@ test("@desktop real CSV lifecycle reaches a utility report, cancel/resume, and l
     "real raw profile result",
   );
 
+  await expect(page.getByLabel("Index 유형")).toHaveValue("identifier");
+  await expect(page.getByText("확인 필요").first()).toBeVisible();
   await page.getByLabel("age 유형").selectOption("integer");
-  await page.getByLabel("segment; 유형").selectOption("categorical");
+  await page.getByLabel("segment;; 유형").selectOption("categorical");
   const saveSchema = page.getByRole("button", { name: "스키마 저장" });
   await saveSchema.focus();
   await page.keyboard.press("Enter");
@@ -487,10 +489,11 @@ test("@desktop real CSV lifecycle reaches a utility report, cancel/resume, and l
   await expect(utilityRadio).toBeChecked();
   await expect(dpRadio).toBeDisabled();
   await expect(page.locator("label.mode-card.disabled")).toContainText("감사 실패 · 사용 불가");
+  await expect(page.locator("label.mode-card.disabled")).toContainText("secret audit");
   await expect(page.locator("label.mode-card.disabled")).toContainText(
-    "checkpoint_schema_and_secret_audit",
+    "formal_dp_enabled=false",
   );
-  await expect(page.getByText("DP 공개 경계 — 현재는 실행할 수 없습니다")).toBeVisible();
+  await expect(page.getByText("DP 공개 경계란?")).toBeVisible();
 
   const parquetFormat = page.getByLabel("Parquet shards + ZIP64 manifest");
   const csvFormat = page.getByLabel("CSV", { exact: true });
@@ -604,6 +607,11 @@ test("@desktop real CSV lifecycle reaches a utility report, cancel/resume, and l
     "succeeded utility downloadable artifacts",
   );
   await expect(page.getByText("개인정보 보호 보장 없음", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "보고서 해설" })).toBeVisible();
+  await expect(page.getByText(/2,000행을 요청했고 실제 2,000행/)).toBeVisible();
+  await expect(page.getByText(/열별 기준선 초과 거리는 중앙값/)).not.toContainText(
+    "계산되지 않음",
+  );
 
   const summaryTab = page.getByRole("tab", { name: "품질 요약" });
   const columnsTab = page.getByRole("tab", { name: "열별 거리" });
@@ -638,6 +646,13 @@ test("@desktop real CSV lifecycle reaches a utility report, cancel/resume, and l
   const savedDownload = testInfo.outputPath(download.suggestedFilename());
   await download.saveAs(savedDownload);
   expect((await stat(savedDownload)).size).toBeGreaterThan(0);
+  const downloadedCsv = await readFile(savedDownload, "utf8");
+  const [header, ...downloadedRows] = downloadedCsv.trimEnd().split("\n");
+  const identifiers = downloadedRows.map((row) => row.split(",", 1)[0]);
+  expect(header).toBe('"Index","age","segment;;"');
+  expect(downloadedRows).toHaveLength(2_000);
+  expect(new Set(identifiers).size).toBe(2_000);
+  expect(downloadedCsv).not.toContain("_RARE_");
   await expectNoHorizontalOverflow(page, "1280×800");
 });
 
