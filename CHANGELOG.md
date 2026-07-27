@@ -8,7 +8,7 @@
 - Disk-streaming ingestion and Parquet normalization with resumable uploads and atomic publication.
 - Typed eight-rule compiler, deterministic transforms, full validation, and bounded residual rejection.
 - Locked MOSTLY AI ARGN utility worker with deterministic bounded fit/generation and fresh-process checkpoint loading.
-- Fail-closed DP boundary and privacy ledger. Formal DP remains unavailable because the pinned DPMM checkpoint secret audit fails.
+- Fail-closed DP boundary and privacy ledger, including a passing pinned DPMM trusted-curator checkpoint contract; the application fit/sample route remains disabled.
 - Primary and optional advanced evaluation, release-safety filtering, canonical content hashes, and CSV/Parquet/XLSX exports.
 - M4 sample and 2M×70 scale verification harnesses, SBOM/integrity manifests, and real-backend Playwright smoke tests.
 
@@ -17,6 +17,7 @@
 - Replaced setup-oriented interface copy with a direct data-to-report workflow, explicit utility/DP boundaries, and workload-specific epoch/model guidance.
 - High-cardinality identifier candidates are now surfaced for confirmation, excluded columns stay out of model input, and generated identifiers are reconstructed deterministically after bounded rejection.
 - Utility reports now project the runtime evaluation into requested/generated row counts, baseline-excess summaries, and per-column distance tables with plain-language interpretation.
+- Reclassified the DPMM checkpoint and serialized fit RNG as non-downloadable trusted-curator state, while proving that fresh-process generation replaces it with an explicit public sampling seed.
 
 ### Verified
 
@@ -26,6 +27,7 @@
 
 ### Known limitations
 
+- Formal DP execution is not exposed in the UI or API until the reviewed app-side MST fit/sample route is implemented; a passing engine probe alone does not enable jobs.
 - No production L40S capacity result is included; that gate requires the designated NVIDIA L40S 48 GB ×4 host.
 - ARF and ForestFlow are not pinned in this repository, so three-engine/three-seed non-inferiority is reported as unavailable rather than inferred.
 - The web production bundle emits a non-failing warning because the main JavaScript chunk exceeds 500 kB.

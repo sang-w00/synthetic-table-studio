@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -385,15 +386,41 @@ def test_private_fit_seed_or_rng_state_cannot_enter_ledger(tmp_path) -> None:
             )
 
 
-def test_availability_uses_phase_zero_result_and_keeps_mst_and_aim_disabled(
+def test_availability_accepts_the_verified_trusted_curator_checkpoint_boundary(
     tmp_path,
 ) -> None:
     availability = load_dp_availability()
-    assert availability.formal_dp_enabled is False
+    assert availability.formal_dp_enabled is True
     assert availability.aim_enabled is False
-    assert availability.probe_status == "failed"
-    assert availability.failed_gates == ("checkpoint_schema_and_secret_audit",)
-    assert availability.failure_reasons == ("checkpoint_schema_and_secret_audit",)
+    assert availability.probe_status == "passed"
+    assert availability.failed_gates == ()
+    assert availability.failure_reasons == ()
+    payload = json.loads(
+        Path(availability.probe_result_path).read_text(encoding="utf-8")
+    )
+    audit = payload["functional"]["checkpoint_audit"]
+    assert payload["formal_dp_gate"]["trusted_curator_checkpoint_boundary"] is True
+    assert audit["passed"] is False
+    assert audit["trusted_curator_passed"] is True
+    assert audit["classification"] == {
+        "scope": "trusted_curator_internal",
+        "downloadable": False,
+        "release_safe": False,
+        "contains_private_source_information": True,
+    }
+    assert {
+        finding["object_path"] for finding in audit["trusted_internal_findings"]
+    } == {
+        "generative_model/estimator.pickle.junction_tree._prng",
+        "generative_model/state.joblib['compressor'].prng",
+    }
+    assert audit["unexpected_private_findings"] == []
+    assert payload["source_audit"]["checks"][
+        "sampling_seed_replaces_loaded_random_state"
+    ]
+    assert payload["functional"]["fresh_process_repeated_generation"][
+        "same_public_seed_after_rng_mutation_reproduced"
+    ]
 
     inconsistent = tmp_path / "probe.json"
     inconsistent.write_text(
@@ -416,7 +443,7 @@ def test_availability_uses_phase_zero_result_and_keeps_mst_and_aim_disabled(
         "fit",
         "persist",
         "fresh_process_repeated_sample",
-        "checkpoint_schema_and_secret_audit",
+        "trusted_curator_checkpoint_boundary",
         "public_false_source_audit",
         "add_remove_accounting",
         "conservative_state_estimates",

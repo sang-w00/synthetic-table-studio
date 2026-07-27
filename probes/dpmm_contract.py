@@ -195,14 +195,16 @@ def _source_audit() -> dict[str, Any]:
     from dpmm.pipelines.base import GenerativePipeline
 
     dpmm_root = Path(dpmm.__file__).resolve().parent
-    pipeline_fit = _compact_source(GenerativePipeline.fit)
+    pipeline_generate = _compact_source(GenerativePipeline.generate)
     mechanism_fit = _compact_source(Mechanism.fit)
     private_measure = _compact_source(Mechanism._measure)
     mst_init = _compact_source(MST.__init__)
     mst_fit = _compact_source(MST._fit)
     mst_select = _compact_source(MST.select)
 
-    pipeline_tree = ast.parse(textwrap.dedent(inspect.getsource(GenerativePipeline.fit)))
+    pipeline_tree = ast.parse(
+        textwrap.dedent(inspect.getsource(GenerativePipeline.fit))
+    )
     pipeline_forwards_public = any(
         isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute)
@@ -217,14 +219,19 @@ def _source_audit() -> dict[str, Any]:
     )
 
     checks = {
-        "pipeline_public_default_false": inspect.signature(
-            GenerativePipeline.fit
-        ).parameters["public"].default
+        "pipeline_public_default_false": inspect.signature(GenerativePipeline.fit)
+        .parameters["public"]
+        .default
         is False,
         "pipeline_forwards_public_argument": pipeline_forwards_public,
-        "mechanism_public_default_false": inspect.signature(Mechanism.fit).parameters[
-            "public"
-        ].default
+        "sampling_seed_replaces_loaded_random_state": (
+            "self.set_random_state(random_state)" in pipeline_generate
+            and pipeline_generate.index("self.set_random_state(random_state)")
+            < pipeline_generate.index("self.gen.generate(")
+        ),
+        "mechanism_public_default_false": inspect.signature(Mechanism.fit)
+        .parameters["public"]
+        .default
         is False,
         "mechanism_forwards_public_to_private_fit": (
             "self._fit(data=data,public=public" in mechanism_fit
@@ -232,10 +239,11 @@ def _source_audit() -> dict[str, Any]:
         "private_measurement_adds_gaussian_noise": (
             "ifpublic:y=xelse:y=x+gaussian_noise(" in private_measure
         ),
-        "public_measurement_is_exact_only_in_public_branch": "ifpublic:y=x" in private_measure,
-        "mst_private_default_false": inspect.signature(MST._fit).parameters[
-            "public"
-        ].default
+        "public_measurement_is_exact_only_in_public_branch": "ifpublic:y=x"
+        in private_measure,
+        "mst_private_default_false": inspect.signature(MST._fit)
+        .parameters["public"]
+        .default
         is False,
         "mst_one_way_measure_forwards_public": (
             "self.measure(data,cliques=cliques_1,public=public)" in mst_fit
@@ -243,9 +251,9 @@ def _source_audit() -> dict[str, Any]:
         "mst_two_way_measure_uses_private_default": (
             "self.measure(data,cliques=cliques_2,flatten=True)" in mst_fit
         ),
-        "mst_selection_public_default_false": inspect.signature(MST.select).parameters[
-            "public"
-        ].default
+        "mst_selection_public_default_false": inspect.signature(MST.select)
+        .parameters["public"]
+        .default
         is False,
         "mst_selection_unit_sensitivity": (
             "self.exponential_mechanism(wgts,epsilon,sensitivity=1.0)" in mst_select
@@ -288,18 +296,13 @@ def _independent_cdp_delta(rho: float, epsilon: float) -> float:
     alpha = alpha_min
     for _ in range(1_000):
         alpha = (alpha_min + alpha_max) / 2.0
-        derivative = (
-            (2.0 * alpha - 1.0) * rho
-            - epsilon
-            + math.log1p(-1.0 / alpha)
-        )
+        derivative = (2.0 * alpha - 1.0) * rho - epsilon + math.log1p(-1.0 / alpha)
         if derivative < 0:
             alpha_min = alpha
         else:
             alpha_max = alpha
     value = math.exp(
-        (alpha - 1.0) * (alpha * rho - epsilon)
-        + alpha * math.log1p(-1.0 / alpha)
+        (alpha - 1.0) * (alpha * rho - epsilon) + alpha * math.log1p(-1.0 / alpha)
     ) / (alpha - 1.0)
     return min(value, 1.0)
 
@@ -421,9 +424,7 @@ def _state_estimate_gate() -> dict[str, Any]:
         largest_pair_cells = pair_cells[0] if pair_cells else 0
 
         upstream_reported_mib = sum(meas_size((value,)) for value in cardinalities)
-        upstream_reported_mib += sum(
-            meas_size((256, 256)) for _ in selected_pair_cells
-        )
+        upstream_reported_mib += sum(meas_size((256, 256)) for _ in selected_pair_cells)
         upstream_implied_bytes = int(math.ceil(upstream_reported_mib * 1024**2))
         checks = {
             "modeled_columns_at_most_32": column_count <= 32,
@@ -481,7 +482,9 @@ def _random_state_equal(left: Any, right: Any) -> bool:
     )
 
 
-def _true_histograms(frame: Any, cliques: list[tuple[str, ...]], domain: dict[str, int]) -> list[Any]:
+def _true_histograms(
+    frame: Any, cliques: list[tuple[str, ...]], domain: dict[str, int]
+) -> list[Any]:
     import numpy as np
 
     histograms: list[Any] = []
@@ -686,7 +689,9 @@ def _checkpoint_audit(
             else:
                 continue
             scanner.visit(loaded, relative)
-        except Exception as error:  # A generated local checkpoint is trusted input here.
+        except (
+            Exception
+        ) as error:  # A generated local checkpoint is trusted input here.
             load_errors.append(
                 {
                     "path": relative,
@@ -696,44 +701,82 @@ def _checkpoint_audit(
             )
 
     findings = byte_findings + scanner.findings
-    passed = not findings and not load_errors and not scanner.truncated
+    checks = {
+        "no_source_path_or_marker": not any(
+            item["code"]
+            in {"SOURCE_PATH_OR_MARKER_SERIALIZED", "FORBIDDEN_BYTE_PATTERN"}
+            and (
+                item.get("pattern", "").startswith("source_")
+                or item["code"] == "SOURCE_PATH_OR_MARKER_SERIALIZED"
+            )
+            for item in findings
+        ),
+        "no_raw_dataframe_or_rows": not any(
+            item["code"]
+            in {"DATAFRAME_SERIALIZED", "SERIES_SERIALIZED", "RAW_ROWS_SERIALIZED"}
+            for item in findings
+        ),
+        "no_unnoised_measurements": not any(
+            item["code"] == "UNNOISED_MEASUREMENT_SERIALIZED" for item in findings
+        ),
+        "no_private_rng_state_or_seed_pattern": not any(
+            item["code"] == "RNG_STATE_SERIALIZED"
+            or item.get("pattern", "").startswith("private_")
+            for item in findings
+        ),
+        "recursive_schema_inspection_complete": not scanner.truncated
+        and not load_errors,
+    }
+    allowed_rng_paths = {
+        "generative_model/estimator.pickle.junction_tree._prng",
+        "generative_model/state.joblib['compressor'].prng",
+    }
+    unexpected_private_findings = [
+        item
+        for item in findings
+        if item["code"] != "RNG_STATE_SERIALIZED"
+        or item.get("object_path") not in allowed_rng_paths
+    ]
+    trusted_curator_passed = (
+        not unexpected_private_findings
+        and not load_errors
+        and not scanner.truncated
+        and all(
+            checks[name]
+            for name in (
+                "no_source_path_or_marker",
+                "no_raw_dataframe_or_rows",
+                "no_unnoised_measurements",
+                "recursive_schema_inspection_complete",
+            )
+        )
+    )
     return {
-        "passed": passed,
+        "passed": all(checks.values()),
+        "trusted_curator_passed": trusted_curator_passed,
+        "classification": {
+            "scope": "trusted_curator_internal",
+            "downloadable": False,
+            "release_safe": False,
+            "contains_private_source_information": True,
+        },
         "checkpoint_files": file_records,
         "checkpoint_bytes": sum(item["size_bytes"] for item in file_records),
         "recursive_objects_inspected": scanner.nodes,
         "recursive_scan_truncated": scanner.truncated,
         "forbidden_findings": findings,
+        "trusted_internal_findings": [
+            item for item in findings if item["code"] == "RNG_STATE_SERIALIZED"
+        ],
+        "unexpected_private_findings": unexpected_private_findings,
         "deserialization_errors": load_errors,
-        "checks": {
-            "no_source_path_or_marker": not any(
-                item["code"] in {"SOURCE_PATH_OR_MARKER_SERIALIZED", "FORBIDDEN_BYTE_PATTERN"}
-                and (
-                    item.get("pattern", "").startswith("source_")
-                    or item["code"] == "SOURCE_PATH_OR_MARKER_SERIALIZED"
-                )
-                for item in findings
-            ),
-            "no_raw_dataframe_or_rows": not any(
-                item["code"] in {"DATAFRAME_SERIALIZED", "SERIES_SERIALIZED", "RAW_ROWS_SERIALIZED"}
-                for item in findings
-            ),
-            "no_unnoised_measurements": not any(
-                item["code"] == "UNNOISED_MEASUREMENT_SERIALIZED"
-                for item in findings
-            ),
-            "no_private_rng_state_or_seed_pattern": not any(
-                item["code"] == "RNG_STATE_SERIALIZED"
-                or item.get("pattern", "").startswith("private_")
-                for item in findings
-            ),
-            "recursive_schema_inspection_complete": not scanner.truncated
-            and not load_errors,
-        },
+        "checks": checks,
     }
 
 
-def _validate_generated(frame: Any, domain: dict[str, int]) -> tuple[bool, dict[str, bool]]:
+def _validate_generated(
+    frame: Any, domain: dict[str, int]
+) -> tuple[bool, dict[str, bool]]:
     import numpy as np
 
     checks: dict[str, bool] = {
@@ -777,7 +820,9 @@ def _fresh_sample_child(args: argparse.Namespace) -> int:
             return
         if resolved == denied_source:
             opened_denied_source = True
-            raise PermissionError("fresh sample process attempted to open denied source manifest")
+            raise PermissionError(
+                "fresh sample process attempted to open denied source manifest"
+            )
 
     sys.addaudithook(deny_source_open)
     started = time.perf_counter()
@@ -790,6 +835,7 @@ def _fresh_sample_child(args: argparse.Namespace) -> int:
         "batch_count": int(args.batch_count),
     }
     try:
+        import numpy as np
         import pandas as pd
         from dpmm.pipelines.base import GenerativePipeline
 
@@ -819,6 +865,17 @@ def _fresh_sample_child(args: argparse.Namespace) -> int:
                 }
             )
             del generated
+        pipeline.gen.generator.set_random_state(np.random.RandomState(4_294_967_291))
+        repeated = pipeline.generate(
+            n_records=int(args.batch_size), random_state=batches[0]["sampling_seed"]
+        )
+        repeated_digest = _sha256_bytes(
+            pd.util.hash_pandas_object(repeated, index=False).values.tobytes()
+        )
+        same_seed_after_rng_mutation_reproduced = (
+            repeated_digest == batches[0]["content_digest"]
+        )
+        del repeated
         payload.update(
             {
                 "batches": batches,
@@ -829,11 +886,14 @@ def _fresh_sample_child(args: argparse.Namespace) -> int:
                     {item["content_digest"] for item in batches}
                 )
                 == len(batches),
+                "same_public_seed_after_rng_mutation_reproduced": (
+                    same_seed_after_rng_mutation_reproduced
+                ),
                 "source_manifest_opened": opened_denied_source,
                 "passed": (
                     all(item["passed"] for item in batches)
-                    and total_rows
-                    == int(args.batch_size) * int(args.batch_count)
+                    and total_rows == int(args.batch_size) * int(args.batch_count)
+                    and same_seed_after_rng_mutation_reproduced
                     and not opened_denied_source
                 ),
             }
@@ -907,11 +967,14 @@ def _functional_gate(repo_root: Path) -> dict[str, Any]:
         store_seconds = time.perf_counter() - store_started
         persist_checks = {
             "checkpoint_directory_exists": checkpoint.is_dir(),
-            "state_file_exists": (checkpoint / "generative_model" / "state.joblib").is_file(),
+            "state_file_exists": (
+                checkpoint / "generative_model" / "state.joblib"
+            ).is_file(),
             "estimator_file_exists": (
                 checkpoint / "generative_model" / "estimator.pickle"
             ).is_file(),
-            "source_manifest_outside_checkpoint": checkpoint not in source_manifest.parents,
+            "source_manifest_outside_checkpoint": checkpoint
+            not in source_manifest.parents,
         }
         audit = _checkpoint_audit(
             checkpoint,
@@ -966,7 +1029,9 @@ def _functional_gate(repo_root: Path) -> dict[str, Any]:
         child_result["stderr_empty"] = not completed.stderr
         if completed.stderr:
             child_result["stderr_sha256"] = _sha256_bytes(completed.stderr)
-        child_result["fresh_process_pid_differs"] = child_result.get("pid") != os.getpid()
+        child_result["fresh_process_pid_differs"] = (
+            child_result.get("pid") != os.getpid()
+        )
         child_result["wall_seconds_parent_observed"] = child_seconds
         child_result["passed"] = bool(
             child_result.get("passed")
@@ -1077,8 +1142,10 @@ def _run_probe(repo_root: Path) -> dict[str, Any]:
             .get("fresh_process_repeated_generation", {})
             .get("passed")
         ),
-        "checkpoint_schema_and_secret_audit": bool(
-            result["functional"].get("checkpoint_audit", {}).get("passed")
+        "trusted_curator_checkpoint_boundary": bool(
+            result["functional"]
+            .get("checkpoint_audit", {})
+            .get("trusted_curator_passed")
         ),
     }
     result["formal_dp_gate"] = formal_gate_status
@@ -1114,7 +1181,9 @@ def main() -> int:
             args.domain_json,
         )
         if not all(required):
-            raise SystemExit("fresh sample mode requires checkpoint/output/source/domain")
+            raise SystemExit(
+                "fresh sample mode requires checkpoint/output/source/domain"
+            )
         return _fresh_sample_child(args)
 
     repo_root = Path(__file__).resolve().parents[1]

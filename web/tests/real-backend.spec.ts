@@ -488,10 +488,8 @@ test("@desktop real CSV lifecycle reaches a utility report, cancel/resume, and l
   const dpRadio = page.getByRole("radio", { name: /형식적 차등프라이버시/ });
   await expect(utilityRadio).toBeChecked();
   await expect(dpRadio).toBeDisabled();
-  await expect(page.locator("label.mode-card.disabled")).toContainText("감사 실패 · 사용 불가");
-  await expect(page.locator("label.mode-card.disabled")).toContainText("secret audit");
   await expect(page.locator("label.mode-card.disabled")).toContainText(
-    "formal_dp_enabled=false",
+    "trusted curator",
   );
   await expect(page.getByText("DP 공개 경계란?")).toBeVisible();
 

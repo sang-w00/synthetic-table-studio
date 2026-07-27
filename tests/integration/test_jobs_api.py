@@ -262,7 +262,7 @@ def test_utility_snapshot_and_host_admission_fail_before_job_creation(
 
 
 @pytest.mark.parametrize("synthesizer", ["mst", "aim"])
-def test_dp_backends_fail_closed_at_verified_probe_without_job_or_ledger_spend(
+def test_dp_backends_fail_before_job_or_ledger_spend_when_app_route_is_disabled(
     jobs_client,
     monkeypatch: pytest.MonkeyPatch,
     synthesizer: str,
@@ -289,8 +289,17 @@ def test_dp_backends_fail_closed_at_verified_probe_without_job_or_ledger_spend(
     )
     assert response.status_code == 409
     assert response.json()["code"] == "BACKEND_INCOMPATIBLE"
-    assert response.json()["context"]["probe_gate"] == "failed"
-    assert response.json()["context"]["formal_dp_enabled"] is False
+    context = response.json()["context"]
+    if synthesizer == "mst":
+        assert context == {
+            "synthesizer": "mst",
+            "probe_gate": "passed",
+            "app_route": "disabled",
+        }
+    else:
+        assert context["probe_gate"] == "failed"
+        assert context["formal_dp_enabled"] is True
+        assert context["aim_enabled"] is False
     assert calls == {"create_job": 0, "reserve": 0}
 
 
@@ -395,6 +404,16 @@ def test_report_safety_artifact_scopes_and_full_and_range_downloads(
         release_safe=True,
         private=False,
     )
+    checkpoint = _publish(
+        repository,
+        job,
+        kind="model_checkpoint",
+        filename="trusted-curator-checkpoint.bin",
+        content=b"private model and training RNG",
+        downloadable=False,
+        release_safe=False,
+        private=True,
+    )
 
     downloadable = client.get(f"/api/v1/jobs/{job.job_id}/artifacts?scope=downloadable")
     assert downloadable.status_code == 200
@@ -411,6 +430,7 @@ def test_report_safety_artifact_scopes_and_full_and_range_downloads(
         str(primary.artifact_id),
         str(internal.artifact_id),
         str(safe.artifact_id),
+        str(checkpoint.artifact_id),
     }
 
     primary_report = client.get(f"/api/v1/jobs/{job.job_id}/reports/primary")

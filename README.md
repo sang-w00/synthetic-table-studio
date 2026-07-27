@@ -11,7 +11,7 @@
 - 평가: 1차 품질 보고서, 선택적 고급 평가, CSV/Parquet/분할 XLSX 내보내기, canonical content SHA-256
 - 보안: loopback-only 기본값, Host/Origin 검사, 세션 쿠키, 경로 confinement, 원자적 publish
 
-형식적 DP 합성은 **현재 비활성화**되어 있습니다. 잠긴 `dpmm==0.1.9`의 checkpoint가 private fit RNG 상태를 직렬화하므로 fresh-load audit를 통과하지 못했습니다. UI/API는 이를 `formal_dp_enabled=false`로 명시하고 DP job을 fail-closed로 거부합니다. 이 상태에서 생성된 결과를 DP라고 부르면 안 됩니다.
+잠긴 `dpmm==0.1.9`의 형식적 DP 계약 probe는 **통과**합니다. checkpoint와 그 안의 private fit RNG는 `trusted_curator_internal`, `downloadable=false`, `release_safe=false`로 분류해 fit·sample 신뢰 영역 밖으로 내보내지 않습니다. fresh sample worker는 명시적인 공개 `sampling_seed`로 로드된 RNG 상태를 교체하며, 동일 seed 재현과 다른 seed 분리를 probe로 고정합니다. 다만 앱의 DP fit/sample 실행 경로는 아직 활성화하지 않았으므로 UI와 API는 DP job을 계속 fail-closed로 거부합니다.
 
 ## 요구 환경
 
@@ -63,7 +63,7 @@ cd web && npm ci && cd ..
 5. Utility 모드에서 학습·생성 실행
 6. 보고서 확인 후 CSV/Parquet/XLSX 다운로드
 
-원본 위반 집계와 private audit는 릴리스 불가 산출물입니다. DP 모드에서는 source-derived domain, advanced evaluator, secret/aux 입력도 명시적 budget과 release-safety 검증 없이 다운로드할 수 없습니다.
+원본 위반 집계, private audit, DPMM checkpoint와 fit RNG는 릴리스 불가 산출물입니다. DP 공개 경계에서는 `release_safe=true`이고 `contains_private_source_information=false`인 합성 결과와 allowlist 기반 공개 보고서만 허용합니다. source-derived domain, advanced evaluator, secret/aux 입력은 명시적 budget과 release-safety 검증 없이 다운로드할 수 없습니다.
 
 ## 검증
 

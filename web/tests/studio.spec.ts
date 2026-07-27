@@ -330,7 +330,7 @@ test("CSV six-step flow uploads chunks, resolves conflicts, resumes, and reports
 
   await expect(page.getByRole("heading", { name: "생성 모드와 자원" })).toBeVisible();
   await expect(page.getByRole("radio", { name: /형식적 차등프라이버시/ })).toBeDisabled();
-  await expect(page.getByText(/secret audit/)).toContainText("formal_dp_enabled=false");
+  await expect(page.locator("#dp-audit")).toContainText("공개 sampling seed");
   await expect(page.getByText(/수학적 보호 보장은 없습니다/).first()).toBeVisible();
   await page.getByRole("checkbox", { name: "CSV" }).check();
   await page.getByRole("button", { name: "일반 합성 시작" }).click();

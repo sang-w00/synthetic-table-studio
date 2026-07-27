@@ -805,14 +805,14 @@ export function App() {
                 </label>
                 <label className="mode-card disabled" aria-describedby="dp-audit dp-boundary">
                   <input type="radio" name="mode" value="differential_privacy" disabled />
-                  <span className="mode-tag">안전 감사 실패 · 사용 불가</span>
+                  <span className="mode-tag">계약 검증 통과 · 실행 경로 준비 중</span>
                   <strong>형식적 차등프라이버시</strong>
                   <span>MST · 행 단위 add/remove 인접성</span>
                   <em id="dp-audit">
-                    고정된 dpmm 0.1.9 체크포인트가 학습에 사용한 비공개 난수 상태를 직렬화합니다.
-                    새 프로세스가 공개 가능한 정보만 읽는다는 secret audit를 통과하지 못해
-                    formal_dp_enabled=false로 닫혀 있습니다. 품질 문제가 아니라 DP 증명 경계가
-                    깨지는 문제이므로 자동 우회하지 않습니다.
+                    고정된 dpmm 0.1.9 checkpoint는 trusted curator 내부에만 보관하고 공개하지
+                    않습니다. 새 생성 프로세스는 공개 sampling seed로 학습 RNG를 교체한다는
+                    계약을 통과했습니다. 현재는 앱의 DP 실행 경로가 아직 비활성화되어 선택할 수
+                    없습니다.
                   </em>
                 </label>
               </div>
@@ -827,7 +827,7 @@ export function App() {
                   <div><dt>경계 안</dt><dd>원본, 비공개 프로파일, 학습 체크포인트, 내부 진단 보고서</dd></div>
                   <div><dt>경계 밖</dt><dd>release_safe=true이고 원본 정보를 포함하지 않는 결과와 공개 보고서만 허용</dd></div>
                   <div><dt>지원 범위</dt><dd>공개 범위·범주가 정해진 모델링 열 최대 32개와 공개 수식 파생 열</dd></div>
-                  <div><dt>현재 상태</dt><dd>감사 실패로 DP 결과를 생성하거나 공개 가능한 DP 결과라고 표시하지 않음</dd></div>
+                  <div><dt>현재 상태</dt><dd>trusted curator checkpoint와 공개 sampling seed 계약은 통과했지만 앱 실행 경로는 아직 비활성화됨</dd></div>
                 </dl>
               </div>
               <aside className="guidance-panel" aria-labelledby="training-guidance-heading">

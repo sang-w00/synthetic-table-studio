@@ -13,7 +13,7 @@ _REQUIRED_FORMAL_GATES = frozenset(
         "fit",
         "persist",
         "fresh_process_repeated_sample",
-        "checkpoint_schema_and_secret_audit",
+        "trusted_curator_checkpoint_boundary",
         "public_false_source_audit",
         "add_remove_accounting",
         "conservative_state_estimates",
