@@ -204,6 +204,27 @@ def test_real_csv_upload_profile_schema_normalize_and_sse(dataset_client) -> Non
     status_response = client.get(f"/api/v1/datasets/{dataset_id}")
     assert status_response.json()["state"] == "normalized"
     assert status_response.json()["legal_actions"] == []
+    recent = client.get("/api/v1/datasets?limit=1")
+    assert recent.status_code == 200
+    assert recent.json()["datasets"] == [
+        {
+            **status_response.json(),
+            "filename": "fixture.csv",
+            "size_bytes": len(content),
+            "source_format": "csv",
+            "upload_offset": len(content),
+            "created_at": recent.json()["datasets"][0]["created_at"],
+            "updated_at": recent.json()["datasets"][0]["updated_at"],
+        }
+    ]
+    recovered_schema = client.get(f"/api/v1/datasets/{dataset_id}/schema")
+    assert recovered_schema.status_code == 200
+    assert recovered_schema.json()["schema_version"] == schema.json()["schema_version"]
+    assert recovered_schema.json()["columns"] == _valid_schema()
+    recovered_rules = client.get(f"/api/v1/datasets/{dataset_id}/rules")
+    assert recovered_rules.status_code == 200
+    assert recovered_rules.json()["rules_version"] == rules.json()["rules_version"]
+    assert recovered_rules.json()["rules"] == rules_body["rules"]
     rules_after_normalize = client.put(
         f"/api/v1/datasets/{dataset_id}/rules",
         json=rules_body,

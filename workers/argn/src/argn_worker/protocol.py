@@ -41,7 +41,11 @@ def validate_workspace_relative_path(value: str) -> str:
     if not isinstance(value, str) or not value or "\\" in value or "\x00" in value:
         raise ValueError("path must be a nonempty POSIX workspace-relative path")
     path = PurePosixPath(value)
-    if path.is_absolute() or value in (".", "..") or any(part in ("", ".", "..") for part in path.parts):
+    if (
+        path.is_absolute()
+        or value in (".", "..")
+        or any(part in ("", ".", "..") for part in path.parts)
+    ):
         raise ValueError("path must not be absolute or contain traversal components")
     return path.as_posix()
 
@@ -56,13 +60,19 @@ class SnapshotFile:
         validate_workspace_relative_path(self.path)
         if not isinstance(self.sha256, str) or not _SHA256_RE.fullmatch(self.sha256):
             raise ValueError("sha256 must be 64 lowercase hexadecimal characters")
-        if isinstance(self.size_bytes, bool) or not isinstance(self.size_bytes, int) or self.size_bytes < 0:
+        if (
+            isinstance(self.size_bytes, bool)
+            or not isinstance(self.size_bytes, int)
+            or self.size_bytes < 0
+        ):
             raise ValueError("size_bytes must be a nonnegative integer")
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "SnapshotFile":
         _exact_keys(value, {"path", "sha256", "size_bytes"}, "snapshot file")
-        return cls(path=value["path"], sha256=value["sha256"], size_bytes=value["size_bytes"])
+        return cls(
+            path=value["path"], sha256=value["sha256"], size_bytes=value["size_bytes"]
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {"path": self.path, "sha256": self.sha256, "size_bytes": self.size_bytes}
@@ -77,7 +87,10 @@ class ManifestSnapshot:
     def __post_init__(self) -> None:
         if self.version != PROTOCOL_VERSION:
             raise ValueError(f"unsupported manifest snapshot version: {self.version!r}")
-        if not isinstance(self.workspace_root, str) or not Path(self.workspace_root).is_absolute():
+        if (
+            not isinstance(self.workspace_root, str)
+            or not Path(self.workspace_root).is_absolute()
+        ):
             raise ValueError("workspace_root must be an absolute path")
         if not isinstance(self.files, dict) or any(not key for key in self.files):
             raise ValueError("files must be an object with nonempty keys")
@@ -92,10 +105,16 @@ class ManifestSnapshot:
         if not isinstance(raw_files, dict):
             raise ValueError("manifest snapshot files must be an object")
         files = {
-            _nonempty_string(name, "manifest snapshot key"): SnapshotFile.from_dict(entry)
+            _nonempty_string(name, "manifest snapshot key"): SnapshotFile.from_dict(
+                entry
+            )
             for name, entry in raw_files.items()
         }
-        return cls(version=value["version"], workspace_root=value["workspace_root"], files=files)
+        return cls(
+            version=value["version"],
+            workspace_root=value["workspace_root"],
+            files=files,
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -122,7 +141,11 @@ class WorkerRequestEnvelope:
             raise ValueError(f"unsupported worker request version: {self.version!r}")
         _nonempty_string(self.request_id, "request_id")
         _nonempty_string(self.job_id, "job_id")
-        if isinstance(self.attempt, bool) or not isinstance(self.attempt, int) or self.attempt < 1:
+        if (
+            isinstance(self.attempt, bool)
+            or not isinstance(self.attempt, int)
+            or self.attempt < 1
+        ):
             raise ValueError("attempt must be an integer >= 1")
         if self.worker_kind not in _WORKER_KINDS:
             raise ValueError(f"unsupported worker_kind: {self.worker_kind!r}")
@@ -195,7 +218,11 @@ class WorkerEvent:
     def __post_init__(self) -> None:
         if self.version != PROTOCOL_VERSION:
             raise ValueError(f"unsupported worker event version: {self.version!r}")
-        if isinstance(self.sequence, bool) or not isinstance(self.sequence, int) or self.sequence < 1:
+        if (
+            isinstance(self.sequence, bool)
+            or not isinstance(self.sequence, int)
+            or self.sequence < 1
+        ):
             raise ValueError("sequence must be an integer >= 1")
         timestamp = _nonempty_string(self.timestamp, "timestamp")
         try:
@@ -204,7 +231,12 @@ class WorkerEvent:
             raise ValueError("timestamp must be ISO 8601") from exc
         _nonempty_string(self.stage, "stage")
         for field, number in (("completed", self.completed), ("total", self.total)):
-            if isinstance(number, bool) or not isinstance(number, (int, float)) or not math.isfinite(number) or number < 0:
+            if (
+                isinstance(number, bool)
+                or not isinstance(number, (int, float))
+                or not math.isfinite(number)
+                or number < 0
+            ):
                 raise ValueError(f"{field} must be a nonnegative finite number")
         if self.completed > self.total:
             raise ValueError("completed must not exceed total")
@@ -216,7 +248,17 @@ class WorkerEvent:
     def from_dict(cls, value: Mapping[str, Any]) -> "WorkerEvent":
         _exact_keys(
             value,
-            {"version", "sequence", "timestamp", "stage", "completed", "total", "unit", "message_code", "metrics"},
+            {
+                "version",
+                "sequence",
+                "timestamp",
+                "stage",
+                "completed",
+                "total",
+                "unit",
+                "message_code",
+                "metrics",
+            },
             "worker event",
         )
         return cls(**value)
@@ -248,7 +290,9 @@ class WorkerResultEnvelope:
             raise ValueError(f"unsupported worker result version: {self.version!r}")
         if self.status not in _RESULT_STATUSES:
             raise ValueError(f"unsupported result status: {self.status!r}")
-        if not isinstance(self.artifacts, list) or any(not isinstance(item, dict) for item in self.artifacts):
+        if not isinstance(self.artifacts, list) or any(
+            not isinstance(item, dict) for item in self.artifacts
+        ):
             raise ValueError("artifacts must be a list of JSON objects")
         canonical_json_bytes(self.artifacts)
         _json_object(self.resource_usage, "resource_usage")
@@ -265,7 +309,11 @@ class WorkerResultEnvelope:
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "WorkerResultEnvelope":
-        _exact_keys(value, {"version", "status", "artifacts", "resource_usage", "error"}, "worker result")
+        _exact_keys(
+            value,
+            {"version", "status", "artifacts", "resource_usage", "error"},
+            "worker result",
+        )
         return cls(**value)
 
     @classmethod
@@ -294,7 +342,13 @@ class ResolvedSnapshotFile:
 
 
 def canonical_json_bytes(value: Any) -> bytes:
-    return json.dumps(value, allow_nan=False, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return json.dumps(
+        value,
+        allow_nan=False,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
 
 
 def confined_existing_path(workspace_root: Path, relative_path: str) -> Path:
@@ -320,7 +374,9 @@ def confined_output_path(workspace_root: Path, relative_path: str) -> Path:
     return candidate
 
 
-def resolve_manifest_snapshot(snapshot: ManifestSnapshot) -> dict[str, ResolvedSnapshotFile]:
+def resolve_manifest_snapshot(
+    snapshot: ManifestSnapshot,
+) -> dict[str, ResolvedSnapshotFile]:
     root = Path(snapshot.workspace_root).resolve(strict=True)
     if not root.is_dir():
         raise ValueError("workspace_root must resolve to a directory")
@@ -331,7 +387,9 @@ def resolve_manifest_snapshot(snapshot: ManifestSnapshot) -> dict[str, ResolvedS
             raise ValueError(f"snapshot entry is not a regular file: {entry.path}")
         size = path.stat().st_size
         if size != entry.size_bytes:
-            raise ValueError(f"snapshot size mismatch for {entry.path}: expected {entry.size_bytes}, got {size}")
+            raise ValueError(
+                f"snapshot size mismatch for {entry.path}: expected {entry.size_bytes}, got {size}"
+            )
         digest = hashlib.sha256()
         with path.open("rb") as handle:
             while chunk := handle.read(1024 * 1024):
@@ -403,13 +461,17 @@ class WorkerEventWriter:
                     parsed = json.loads(line)
                     event = WorkerEvent.from_dict(parsed)
                     if event.sequence <= last:
-                        raise ValueError("existing worker events are not strictly monotonic")
+                        raise ValueError(
+                            "existing worker events are not strictly monotonic"
+                        )
                     last = event.sequence
         return last
 
     def append(self, event: WorkerEvent) -> None:
         if event.sequence != self._last_sequence + 1:
-            raise ValueError(f"event sequence must be {self._last_sequence + 1}, got {event.sequence}")
+            raise ValueError(
+                f"event sequence must be {self._last_sequence + 1}, got {event.sequence}"
+            )
         data = canonical_json_bytes(event.to_dict()) + b"\n"
         fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
         try:

@@ -213,6 +213,18 @@ def test_create_is_idempotent_admits_utility_and_builds_bounded_argn_fit_request
     )
     assert repeated.status_code == 201
     assert repeated.json() == created
+    recent = client.get("/api/v1/jobs?limit=1")
+    assert recent.status_code == 200
+    assert recent.json()["jobs"] == [
+        {
+            **created,
+            "mode": "utility",
+            "synthesizer": "tabular_argn",
+            "output_rows": 20,
+            "created_at": recent.json()["jobs"][0]["created_at"],
+            "updated_at": recent.json()["jobs"][0]["updated_at"],
+        }
+    ]
 
     attempt = layout.job_attempt_dir(created["job_id"], 1)
     request = json.loads((attempt / "argn-fit-request.json").read_bytes())
@@ -261,11 +273,19 @@ def test_utility_snapshot_and_host_admission_fail_before_job_creation(
     assert repository.replay_events(OwnerType.JOB, uuid4()) == ()
 
 
-@pytest.mark.parametrize("synthesizer", ["mst", "aim"])
-def test_dp_backends_fail_before_job_or_ledger_spend_when_app_route_is_disabled(
+@pytest.mark.parametrize(
+    ("synthesizer", "status_code", "error_code"),
+    [
+        ("mst", 404, "DATASET_NOT_FOUND"),
+        ("aim", 409, "BACKEND_INCOMPATIBLE"),
+    ],
+)
+def test_dp_admission_fails_without_creating_a_job_or_spending_the_ledger(
     jobs_client,
     monkeypatch: pytest.MonkeyPatch,
     synthesizer: str,
+    status_code: int,
+    error_code: str,
 ) -> None:
     client, _, _, repository, _, _ = jobs_client
     calls = {"create_job": 0, "reserve": 0}
@@ -287,16 +307,10 @@ def test_dp_backends_fail_before_job_or_ledger_spend_when_app_route_is_disabled(
         json=_dp_request(synthesizer),
         headers={"Idempotency-Key": f"dp-{synthesizer}"},
     )
-    assert response.status_code == 409
-    assert response.json()["code"] == "BACKEND_INCOMPATIBLE"
-    context = response.json()["context"]
-    if synthesizer == "mst":
-        assert context == {
-            "synthesizer": "mst",
-            "probe_gate": "passed",
-            "app_route": "disabled",
-        }
-    else:
+    assert response.status_code == status_code
+    assert response.json()["code"] == error_code
+    if synthesizer == "aim":
+        context = response.json()["context"]
         assert context["probe_gate"] == "failed"
         assert context["formal_dp_enabled"] is True
         assert context["aim_enabled"] is False

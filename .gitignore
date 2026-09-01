@@ -28,3 +28,7 @@ build/tmp/
 .DS_Store
 .idea/
 .vscode/
+
+# Local benchmark run records and the local file's own column headers
+benchmarks/results/*.json
+benchmarks/sample-column-map.json

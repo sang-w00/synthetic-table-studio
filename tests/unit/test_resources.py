@@ -7,12 +7,14 @@ from sts.storage.resources import (
     MIB,
     ArtifactComponent,
     DiskEstimationInput,
+    HostResourceSnapshot,
     MemoryProjection,
     ResourceAdmissionError,
     ResourceErrorCode,
     ResourceProfileName,
     admit_disk,
     admit_memory,
+    derive_runtime_resource_plan,
     estimate_disk,
     estimate_dp_state,
     l40s_lease,
@@ -152,6 +154,57 @@ def test_l40s_host_and_vram_leases_are_fail_closed() -> None:
             accepted.model_copy(update={"gpu_allocated_reserved_bytes": 40 * GIB}),
             lease,
         )
+
+
+def test_runtime_resource_plan_uses_current_host_capacity_and_validated_gpu() -> None:
+    snapshot = HostResourceSnapshot(
+        platform_system="Darwin",
+        platform_machine="arm64",
+        logical_cpu_count=14,
+        total_memory_bytes=48 * GIB,
+        available_memory_bytes=24 * GIB,
+        disk_total_bytes=926 * GIB,
+        disk_free_bytes=83 * GIB,
+        gpu_backend="mps",
+        gpu_device_count=1,
+        gpu_name="Apple M4 Pro",
+    )
+
+    plan = derive_runtime_resource_plan(snapshot, mps_validated=True)
+
+    assert plan.resource_profile == "auto_mps"
+    assert plan.recommended_device == "mps"
+    assert plan.worker_lease_bytes == 20 * GIB
+    assert plan.utility_max_rows == 250_000
+    assert plan.duckdb_memory_limit_bytes == 3 * GIB
+    assert plan.max_concurrent_jobs == 1
+    assert plan.disk_free_bytes == 83 * GIB
+
+
+def test_runtime_resource_plan_falls_back_conservatively_on_small_or_unvalidated_host() -> (
+    None
+):
+    snapshot = HostResourceSnapshot(
+        platform_system="Linux",
+        platform_machine="x86_64",
+        logical_cpu_count=2,
+        total_memory_bytes=8 * GIB,
+        available_memory_bytes=3 * GIB,
+        disk_total_bytes=100 * GIB,
+        disk_free_bytes=12 * GIB,
+        gpu_backend="cuda",
+        gpu_device_count=1,
+        gpu_name="unvalidated",
+    )
+
+    plan = derive_runtime_resource_plan(snapshot)
+
+    assert plan.resource_profile == "auto_cpu"
+    assert plan.recommended_device == "cpu"
+    assert plan.worker_lease_bytes == 1 * GIB
+    assert plan.utility_max_rows == 50_000
+    assert plan.duckdb_memory_limit_bytes == 512 * MIB
+    assert plan.max_concurrent_jobs == 1
 
 
 def test_dp_state_estimator_uses_largest_d_minus_one_pair_products() -> None:

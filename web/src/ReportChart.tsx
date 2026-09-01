@@ -1,12 +1,12 @@
 import { BarChart } from "echarts/charts";
-import { GridComponent, TooltipComponent } from "echarts/components";
+import { GridComponent, LegendComponent, TooltipComponent } from "echarts/components";
 import * as echarts from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import type { PrimaryReport } from "./api";
 
-echarts.use([BarChart, GridComponent, TooltipComponent, CanvasRenderer]);
+echarts.use([BarChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer]);
 
 interface ReportChartProps {
   report: PrimaryReport;
@@ -14,8 +14,11 @@ interface ReportChartProps {
 
 export function ReportChart({ report }: ReportChartProps) {
   const host = useRef<HTMLDivElement>(null);
-  const columns = (report.columns ?? []).filter(
-    (column) => typeof column.distance === "number" || typeof column.baseline_excess === "number",
+  const columns = useMemo(
+    () => (report.columns ?? []).filter(
+      (column) => typeof column.distance === "number" || typeof column.baseline_excess === "number",
+    ),
+    [report],
   );
 
   useEffect(() => {
@@ -30,7 +33,8 @@ export function ReportChart({ report }: ReportChartProps) {
     chart.setOption({
       animationDuration: 160,
       color: [accent, focus],
-      grid: { left: 42, right: 16, top: 24, bottom: 58 },
+      grid: { left: 42, right: 16, top: 44, bottom: 58 },
+      legend: { top: 0, textStyle: { color: muted } },
       tooltip: { trigger: "axis" },
       xAxis: {
         type: "category",
@@ -75,12 +79,30 @@ export function ReportChart({ report }: ReportChartProps) {
   }
 
   return (
-    <div
-      ref={host}
-      className="report-chart"
-      role="img"
-      aria-label="열별 합성 거리와 기준선 초과 막대 차트"
-      data-testid="report-chart"
-    />
+    <>
+      <div
+        ref={host}
+        className="report-chart"
+        role="img"
+        aria-label="열별 합성 거리와 기준선 초과 막대 차트"
+        aria-describedby="report-chart-data"
+        data-testid="report-chart"
+      />
+      <table id="report-chart-data" className="visually-hidden">
+        <caption>차트와 같은 값의 표</caption>
+        <thead>
+          <tr><th scope="col">열</th><th scope="col">합성 거리</th><th scope="col">기준선 초과</th></tr>
+        </thead>
+        <tbody>
+          {columns.map((column) => (
+            <tr key={column.name}>
+              <th scope="row">{column.name}</th>
+              <td>{column.distance?.toFixed(4) ?? "N/A"}</td>
+              <td>{column.baseline_excess?.toFixed(4) ?? "N/A"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
   );
 }

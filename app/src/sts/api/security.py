@@ -88,7 +88,8 @@ class LocalSecurityConfig:
         cookie_name: str = SESSION_COOKIE_NAME,
     ) -> None:
         hosts = _normalize_values(allowed_hosts, field_name="allowed_hosts")
-        origins = frozenset(value.strip() for value in allowed_origins if value.strip())
+        # Browsers serialize an origin in lower case; the allowlist must match that.
+        origins = frozenset(value.strip().lower() for value in allowed_origins if value.strip())
         if not origins:
             raise ValueError("allowed_origins cannot be empty")
         token = session_token or secrets.token_urlsafe(32)
@@ -100,8 +101,11 @@ class LocalSecurityConfig:
         object.__setattr__(self, "cookie_name", cookie_name)
 
 
-def bootstrap_response(config: LocalSecurityConfig) -> JSONResponse:
-    response = JSONResponse({"status": "ready"})
+def bootstrap_response(
+    config: LocalSecurityConfig,
+    content: Mapping[str, Any] | None = None,
+) -> JSONResponse:
+    response = JSONResponse(dict(content or {"status": "ready"}))
     response.set_cookie(
         config.cookie_name,
         config.session_token,
@@ -175,7 +179,11 @@ class LocalSecurityMiddleware:
         method = str(scope.get("method", "GET")).upper()
         if method in MUTATION_METHODS:
             origin_values = _headers(scope, b"origin")
-            origin = origin_values[0].decode("latin-1") if len(origin_values) == 1 else ""
+            origin = (
+                origin_values[0].decode("latin-1").strip().lower()
+                if len(origin_values) == 1
+                else ""
+            )
             if origin not in self.config.allowed_origins:
                 await _problem(
                     DomainError(ErrorCode.ORIGIN_REJECTED, "mutation Origin is not allowlisted")

@@ -139,8 +139,11 @@ def _constant_distance(left: Sequence[object], right: Sequence[object]) -> float
         return None
     left_unique = set(left)
     right_unique = set(right)
-    if len(left_unique) == 1 or len(right_unique) == 1:
-        return 0.0 if left_unique == right_unique and len(left_unique) == 1 else 1.0
+    # Only a genuinely degenerate pair short-circuits. When one side is constant and
+    # the other is not, the real KS/TVD distance is well defined and usually small;
+    # returning 1.0 there would make that column dominate every aggregate.
+    if len(left_unique) == 1 and len(right_unique) == 1:
+        return 0.0 if left_unique == right_unique else 1.0
     return None
 
 

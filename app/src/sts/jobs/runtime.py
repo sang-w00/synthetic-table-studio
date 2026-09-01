@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import csv
 import hashlib
 import json
 import math
 import os
+import random
+import secrets
 import shutil
 import sqlite3
 import threading
@@ -18,7 +21,15 @@ import duckdb
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from sts.domain import ColumnKind, DomainError, ErrorCode, JobState, UtilitySynthesisRequest
+from sts.domain import (
+    ArtifactManifest,
+    ColumnKind,
+    DifferentialPrivacySynthesisRequest,
+    DomainError,
+    ErrorCode,
+    JobState,
+    UtilitySynthesisRequest,
+)
 from sts.evaluation import (
     EvaluationConfig,
     deterministic_hmac_sample,
@@ -34,6 +45,7 @@ from sts.export import (
 )
 from sts.export.models import ExportedFile
 from sts.jobs.protocol import (
+    ManifestSnapshot,
     SnapshotFile,
     WorkerError,
     WorkerRequestEnvelope,
@@ -50,7 +62,17 @@ from sts.jobs.utility import (
     register_hmac_partition_sql,
     rows_per_candidate,
 )
-from sts.reports import ArtifactSafety, build_utility_primary_report, publish_report_artifacts
+from sts.privacy import DiscreteCodebook, PublicMetadataManifest
+from sts.reports import (
+    ArtifactSafety,
+    BuiltReport,
+    build_dp_curator_report,
+    build_dp_release_report,
+    build_plain_language_report,
+    build_utility_primary_report,
+    publish_plain_report_artifact,
+    publish_report_artifacts,
+)
 from sts.rules.execution import (
     StructuralCodecs,
     attach_candidate_indices,
@@ -60,7 +82,7 @@ from sts.rules.execution import (
 from sts.rules.rejection import CandidateBatch, GlobalRejectionCoordinator
 from sts.storage import CatalogRepository, WorkspaceLayout
 from sts.storage.atomic import sha256_file
-from sts.storage.repository import JobRecord
+from sts.storage.repository import JobRecord, LedgerRunState
 
 if TYPE_CHECKING:
     from sts.api.jobs import JobService
@@ -275,7 +297,7 @@ class DeterministicLightweightAdapter:
 
 
 class UtilityJobRuntime:
-    """Single-host background runtime for admitted utility jobs only."""
+    """Single-host background runtime for admitted synthesis jobs."""
 
     def __init__(
         self,
@@ -284,14 +306,20 @@ class UtilityJobRuntime:
         service: JobService,
         *,
         adapter: UtilityWorkerAdapter | None = None,
+        eval_adapter: UtilityWorkerAdapter | None = None,
         worker_lease_bytes: int = 24 * 1024**3,
+        max_concurrent_jobs: int = 1,
     ) -> None:
         if worker_lease_bytes <= 0:
             raise ValueError("worker_lease_bytes must be positive")
+        if max_concurrent_jobs <= 0:
+            raise ValueError("max_concurrent_jobs must be positive")
         self.repository = repository
         self.workspace = workspace
         self.service = service
-        self.adapter: UtilityWorkerAdapter = adapter or WorkerSupervisor()
+        default_adapter = WorkerSupervisor()
+        self.adapter: UtilityWorkerAdapter = adapter or default_adapter
+        self.eval_adapter: UtilityWorkerAdapter = eval_adapter or default_adapter
         self.worker_lease_bytes = worker_lease_bytes
         self._queue: asyncio.Queue[UUID | None] = asyncio.Queue()
         self._runner: asyncio.Task[None] | None = None
@@ -300,7 +328,7 @@ class UtilityJobRuntime:
         self._pending: set[UUID] = set()
         self._submission_lock = threading.Lock()
         self._loop: asyncio.AbstractEventLoop | None = None
-        self._worker_lock = asyncio.Lock()
+        self._worker_capacity = asyncio.Semaphore(max_concurrent_jobs)
         self._stopping = False
 
     async def start(self) -> None:
@@ -387,36 +415,322 @@ class UtilityJobRuntime:
             if job_id is None:
                 self._queue.task_done()
                 return
+            await self._worker_capacity.acquire()
             task = asyncio.create_task(self._run_guarded(job_id), name=f"sts-job-{job_id}")
             self._active[job_id] = task
-            task.add_done_callback(lambda _task, key=job_id: self._active.pop(key, None))
+            task.add_done_callback(lambda _task, key=job_id: self._job_finished(key))
             self._queue.task_done()
+
+    def _job_finished(self, job_id: UUID) -> None:
+        self._active.pop(job_id, None)
+        self._worker_capacity.release()
 
     async def _run_guarded(self, job_id: UUID) -> None:
         lease = None
         try:
             request = self.repository.get_job_request(job_id).value
-            if not isinstance(request, UtilitySynthesisRequest):
-                raise DomainError(ErrorCode.BACKEND_INCOMPATIBLE, "runtime never executes DP jobs")
-            async with self._worker_lock:
-                lease = self.repository.acquire_resource_lease(
-                    job_id,
-                    "utility_worker_rss",
-                    self.worker_lease_bytes,
-                    details={"worker_kind": "argn", "process_count": 1},
-                )
+            worker_kind = (
+                "dpmm" if isinstance(request, DifferentialPrivacySynthesisRequest) else "argn"
+            )
+            lease = self.repository.acquire_resource_lease(
+                job_id,
+                (
+                    "dp_worker_rss"
+                    if isinstance(request, DifferentialPrivacySynthesisRequest)
+                    else "utility_worker_rss"
+                ),
+                self.worker_lease_bytes,
+                details={"worker_kind": worker_kind, "process_count": 1},
+            )
+            if isinstance(request, DifferentialPrivacySynthesisRequest):
+                await self._run_dp_job(job_id, request)
+            elif isinstance(request, UtilitySynthesisRequest):
                 await self._run_job(job_id, request)
+            else:
+                raise DomainError(
+                    ErrorCode.BACKEND_INCOMPATIBLE,
+                    "runtime received an unsupported synthesis request",
+                )
+        except asyncio.CancelledError:
+            self._request_cancel_file(job_id, "runtime_task_cancelled")
+            raise
         except RuntimeCancellation:
             self._finish_cancelled(job_id)
-        except asyncio.CancelledError:
-            self._finish_cancelled(job_id)
-            raise
         except Exception as error:
             self._finish_failed(job_id, error)
         finally:
             if lease is not None:
-                self.repository.release_resource_lease(lease.lease_id)
-            self._submitted.discard(job_id)
+                with suppress(Exception):
+                    self.repository.release_resource_lease(lease.lease_id)
+
+    async def _run_dp_job(self, job_id: UUID, request: DifferentialPrivacySynthesisRequest) -> None:
+        record = self.repository.get_job(job_id)
+        if record.state is JobState.CANCELLING:
+            raise RuntimeCancellation
+        if record.state is not JobState.ADMITTED:
+            raise DomainError(
+                ErrorCode.INVALID_STATE,
+                f"runtime requires admitted job, found {record.state.value}",
+            )
+        record = self._advance(record, JobState.PREPARING)
+        self._check_cancelled(record)
+        fit_request = await asyncio.to_thread(self.service.prepare_runtime_plan, job_id)
+        attempt_dir = self.workspace.job_attempt_dir(job_id, record.attempt, create=True)
+        plan_metadata = json.loads(
+            (attempt_dir / "dpmm-plan-metadata.json").read_text(encoding="utf-8")
+        )
+        public_manifest = PublicMetadataManifest.model_validate(plan_metadata["public_metadata"])
+        codebook = DiscreteCodebook(public_manifest)
+        compiled = self.service._compiled_rules(
+            self.repository.get_dataset_manifest(request.dataset_id),
+            mode="differential_privacy",
+        )
+
+        record = self._advance(record, JobState.FITTING)
+        fit_execution = await self._run_worker(record, fit_request, "fit")
+        self._require_worker_success(fit_execution)
+        checkpoint = self.workspace.resolve_relative(
+            fit_request.limits["dpmm"]["checkpoint_path"], require_exists=True
+        )
+        if not checkpoint.is_dir():
+            raise DomainError(ErrorCode.WORKER_FAILED, "dpmm checkpoint is not a directory")
+        self.repository.set_resume_boundary(job_id, "validated_fit_checkpoint")
+        self._check_cancelled(record)
+
+        encoded_relative = (
+            attempt_dir.relative_to(self.workspace.root) / "dpmm-encoded-output.csv"
+        ).as_posix()
+        sample_request = WorkerRequestEnvelope(
+            request_id=str(uuid4()),
+            job_id=str(job_id),
+            attempt=record.attempt,
+            worker_kind="dpmm",
+            operation="sample",
+            manifest_snapshot=ManifestSnapshot(
+                workspace_root=str(self.workspace.root),
+                files={
+                    **_checkpoint_snapshots(self.workspace, checkpoint),
+                    "public_metadata": fit_request.manifest_snapshot.files["public_metadata"],
+                },
+            ),
+            limits={
+                "max_process_tree_rss_bytes": self.worker_lease_bytes,
+                "dpmm": {
+                    "checkpoint_path": self.workspace.as_relative(checkpoint),
+                    "encoded_output_path": encoded_relative,
+                    "target_count": request.output_rows,
+                    "sampling_seed": request.privacy.sampling_seed,
+                    "domain": codebook.domain,
+                },
+            },
+            cancellation_path=(
+                attempt_dir.relative_to(self.workspace.root) / "cancel.requested"
+            ).as_posix(),
+        )
+        record = self._advance(record, JobState.GENERATING)
+        sample_execution = await self._run_worker(record, sample_request, "sample")
+        self._require_worker_success(sample_execution)
+        encoded_path = self.workspace.resolve_relative(encoded_relative, require_exists=True)
+        self._check_cancelled(record)
+
+        record = self._advance(record, JobState.REPAIRING)
+        output_path = await asyncio.to_thread(
+            self._decode_dp_output,
+            record,
+            request,
+            encoded_path,
+            codebook,
+            compiled,
+        )
+        encoded_path.unlink(missing_ok=True)
+        self.repository.set_resume_boundary(job_id, "published_generation_shard")
+        self._check_cancelled(record)
+
+        record = self._advance(record, JobState.EVALUATING)
+        evaluation, evaluation_inputs = await asyncio.to_thread(
+            self._evaluate_dp_curator,
+            record,
+            request,
+            compiled,
+            output_path,
+        )
+        advanced_request = WorkerRequestEnvelope(
+            request_id=str(uuid4()),
+            job_id=str(job_id),
+            attempt=record.attempt,
+            worker_kind="eval",
+            operation="evaluate_advanced",
+            manifest_snapshot=ManifestSnapshot(
+                workspace_root=str(self.workspace.root),
+                files=evaluation_inputs,
+            ),
+            limits={
+                "evaluation_config": {
+                    "version": "1.0",
+                    "seed": request.privacy.sampling_seed,
+                    "mode": "differential_privacy",
+                    "report_scope": "internal",
+                    "column_types": {column.name: column.kind.value for column in compiled.columns},
+                }
+            },
+            cancellation_path=(
+                attempt_dir.relative_to(self.workspace.root) / "cancel.requested"
+            ).as_posix(),
+        )
+        advanced_execution = await self._run_worker(record, advanced_request, "advanced")
+        self._require_worker_success(advanced_execution)
+        advanced_artifact = next(
+            item
+            for item in advanced_execution.result.artifacts
+            if item.get("kind") == "internal_diagnostic_report_json"
+        )
+        advanced_path = self.workspace.resolve_relative(
+            str(advanced_artifact["path"]), require_exists=True
+        )
+        evaluation["advanced"] = json.loads(advanced_path.read_text(encoding="utf-8"))
+        _atomic_bytes(
+            attempt_dir / "evaluation.json",
+            json.dumps(evaluation, sort_keys=True, separators=(",", ":")).encode(),
+        )
+        self.repository.set_resume_boundary(job_id, "completed_evaluation_json")
+        self._check_cancelled(record)
+
+        record = self._advance(record, JobState.EXPORTING)
+        staged = await asyncio.to_thread(
+            self._stage_exports, record, request, compiled, output_path, evaluation
+        )
+        released = self.repository.transition_ledger_run(
+            plan_metadata["ledger_run_id"], LedgerRunState.RELEASED, model_id=uuid4()
+        )
+        ledger_projection = {
+            **released.record,
+            "run_id": str(released.run_id),
+            "model_id": str(released.model_id),
+            "privacy_scope_id": str(released.privacy_scope_id),
+            "release_count": 1,
+        }
+        artifacts = await asyncio.to_thread(
+            self._publish_exports, record, staged, release_safe=True
+        )
+        limitations = tuple(str(item) for item in released.record.get("limitations", ()))
+        curator_report = build_dp_curator_report(
+            job_id=job_id,
+            evaluation=evaluation,
+            ledger_projection=ledger_projection,
+            artifacts=artifacts,
+            limitations=limitations,
+        )
+        await self._publish_report_bundle(curator_report, job_id=job_id, attempt=record.attempt)
+        release_report = build_dp_release_report(
+            job_id=job_id,
+            ledger_projection=ledger_projection,
+            output_summary={
+                "requested_rows": request.output_rows,
+                "actual_rows": evaluation["exact"]["actual_rows"],
+                "schema": [column.model_dump(mode="json") for column in compiled.columns],
+                "hard_rule_violations": evaluation["exact"]["hard_rule_violations"],
+                "canonical_content_sha256": evaluation["exact"]["canonical_content_sha256"],
+                "artifacts": [artifact.model_dump(mode="json") for artifact in artifacts],
+            },
+            artifacts=artifacts,
+            limitations=limitations,
+        )
+        await self._publish_report_bundle(release_report, job_id=job_id, attempt=record.attempt)
+        record = self._advance(record, JobState.PUBLISHING)
+        self.repository.set_resume_boundary(job_id, "completed_export")
+        succeeded = self.repository.transition_job(
+            job_id, JobState.SUCCEEDED, expected_state=JobState.PUBLISHING
+        )
+        self.service._emit(
+            job_id,
+            stage="publishing",
+            state=succeeded.state,
+            completed=1,
+            terminal=True,
+            code="JOB_SUCCEEDED",
+            metrics={"artifact_count": len(artifacts), "actual_rows": request.output_rows},
+        )
+
+    def _decode_dp_output(
+        self,
+        record: JobRecord,
+        request: DifferentialPrivacySynthesisRequest,
+        encoded_path: Path,
+        codebook: DiscreteCodebook,
+        compiled: CompiledRules,
+    ) -> Path:
+        output = (
+            self.workspace.job_attempt_dir(record.job_id, record.attempt, create=True)
+            / "synthetic.parquet"
+        )
+        part = output.with_name(f".{output.name}.{uuid4().hex}.part")
+        writer: pq.ParquetWriter | None = None
+        decoded_rows = 0
+        rng = random.Random(request.privacy.sampling_seed)
+        try:
+            with encoded_path.open("r", encoding="utf-8", newline="") as stream:
+                reader = csv.DictReader(stream)
+                if reader.fieldnames != list(codebook.domain):
+                    raise DomainError(
+                        ErrorCode.OUTPUT_INVALID,
+                        "dpmm output columns do not match the public codebook",
+                    )
+                pending: list[dict[str, object]] = []
+                for encoded in reader:
+                    pending.append(
+                        {
+                            name: codebook.decode_value(name, int(encoded[name]), rng=rng)
+                            for name in codebook.domain
+                        }
+                    )
+                    if len(pending) >= 65_536:
+                        writer, decoded_rows = self._write_dp_batch(
+                            pending, compiled, part, writer, decoded_rows
+                        )
+                        pending.clear()
+                if pending:
+                    writer, decoded_rows = self._write_dp_batch(
+                        pending, compiled, part, writer, decoded_rows
+                    )
+            if writer is None:
+                raise DomainError(ErrorCode.OUTPUT_INVALID, "dpmm produced no rows")
+            writer.close()
+            writer = None
+            if decoded_rows != request.output_rows:
+                raise DomainError(
+                    ErrorCode.OUTPUT_INVALID,
+                    "dpmm output row count does not match the public target count",
+                    context={"expected": request.output_rows, "actual": decoded_rows},
+                )
+            os.replace(part, output)
+            return output
+        finally:
+            if writer is not None:
+                writer.close()
+            part.unlink(missing_ok=True)
+
+    @staticmethod
+    def _write_dp_batch(
+        rows: list[dict[str, object]],
+        compiled: CompiledRules,
+        path: Path,
+        writer: pq.ParquetWriter | None,
+        row_start: int,
+    ) -> tuple[pq.ParquetWriter, int]:
+        candidate = attach_candidate_indices(pa.Table.from_pylist(rows), row_start=row_start)
+        repaired = repair_and_validate_candidate(
+            candidate, compiled, codecs=StructuralCodecs(fixed_tuples={})
+        )
+        if repaired.report.violation_union_count:
+            raise DomainError(
+                ErrorCode.OUTPUT_INVALID,
+                "formal-DP public postprocessing could not satisfy hard rules",
+                context={"violations": repaired.report.violation_union_count},
+            )
+        if writer is None:
+            writer = pq.ParquetWriter(path, repaired.table.schema, compression="zstd")
+        writer.write_table(repaired.table)
+        return writer, row_start + repaired.table.num_rows
 
     async def _run_job(self, job_id: UUID, request: UtilitySynthesisRequest) -> None:
         record = self.repository.get_job(job_id)
@@ -460,14 +774,12 @@ class UtilityJobRuntime:
                 code="JOB_FIT_CHECKPOINT_REUSED",
                 metrics={"source_job_id": str(plan_record.job_id)},
             )
-        self._check_cancelled(record)
 
         record = self._advance(record, JobState.GENERATING)
         candidate_paths = await self._generate_candidates(
             record, request, fit_request, compiled, codecs
         )
         self._check_cancelled(record)
-
         record = self._advance(record, JobState.REPAIRING)
         output_path, rejection = await asyncio.to_thread(
             self._repair_candidates,
@@ -483,7 +795,7 @@ class UtilityJobRuntime:
         self._check_cancelled(record)
 
         record = self._advance(record, JobState.EVALUATING)
-        evaluation = await asyncio.to_thread(
+        evaluation, evaluation_inputs = await asyncio.to_thread(
             self._evaluate,
             record,
             request,
@@ -493,6 +805,43 @@ class UtilityJobRuntime:
             output_path,
             rejection,
         )
+        advanced_request = WorkerRequestEnvelope(
+            request_id=str(uuid4()),
+            job_id=str(job_id),
+            attempt=record.attempt,
+            worker_kind="eval",
+            operation="evaluate_advanced",
+            manifest_snapshot=ManifestSnapshot(
+                workspace_root=str(self.workspace.root),
+                files=evaluation_inputs,
+            ),
+            limits={
+                "evaluation_config": {
+                    "version": "1.0",
+                    "seed": request.generation_seed or 0,
+                    "mode": "utility",
+                    "report_scope": "internal",
+                    "column_types": {column.name: column.kind.value for column in compiled.columns},
+                }
+            },
+            cancellation_path=(
+                self.workspace.job_attempt_dir(job_id, record.attempt)
+                .relative_to(self.workspace.root)
+                .joinpath("cancel.requested")
+                .as_posix()
+            ),
+        )
+        advanced_execution = await self._run_worker(record, advanced_request, "advanced")
+        self._require_worker_success(advanced_execution)
+        advanced_artifact = next(
+            item
+            for item in advanced_execution.result.artifacts
+            if item.get("kind") == "internal_diagnostic_report_json"
+        )
+        advanced_path = self.workspace.resolve_relative(
+            str(advanced_artifact["path"]), require_exists=True
+        )
+        evaluation["advanced"] = json.loads(advanced_path.read_text(encoding="utf-8"))
         evaluation_path = self.workspace.job_attempt_dir(job_id, record.attempt) / "evaluation.json"
         _atomic_bytes(
             evaluation_path,
@@ -514,12 +863,8 @@ class UtilityJobRuntime:
             evaluation=evaluation,
             artifacts=[artifact.model_dump(mode="json") for artifact in artifacts],
         )
-        report_artifacts = await asyncio.to_thread(
-            publish_report_artifacts,
-            self.repository,
-            report,
-            job_id=job_id,
-            attempt=record.attempt,
+        report_artifacts = await self._publish_report_bundle(
+            report, job_id=job_id, attempt=record.attempt
         )
         artifacts.extend(report_artifacts)
         self.repository.set_resume_boundary(job_id, "completed_export")
@@ -535,6 +880,41 @@ class UtilityJobRuntime:
             code="JOB_SUCCEEDED",
             metrics={"artifact_count": len(artifacts), "actual_rows": request.output_rows},
         )
+
+    async def _publish_report_bundle(
+        self,
+        report: BuiltReport,
+        *,
+        job_id: UUID,
+        attempt: int,
+    ) -> list[ArtifactManifest]:
+        """Publish one report as JSON, HTML and — where it has one — plain-language HWPX.
+
+        The HWPX companion inherits the source report's safety flags, so a
+        release-safe report yields a release-safe document and nothing else.
+        """
+
+        manifests = list(
+            await asyncio.to_thread(
+                publish_report_artifacts,
+                self.repository,
+                report,
+                job_id=job_id,
+                attempt=attempt,
+            )
+        )
+        plain = build_plain_language_report(report)
+        if plain is not None:
+            manifests.append(
+                await asyncio.to_thread(
+                    publish_plain_report_artifact,
+                    self.repository,
+                    plain,
+                    job_id=job_id,
+                    attempt=attempt,
+                )
+            )
+        return manifests
 
     def _advance(self, record: JobRecord, target: JobState) -> JobRecord:
         self._check_cancelled(record)
@@ -635,15 +1015,17 @@ class UtilityJobRuntime:
         self, record: JobRecord, request: WorkerRequestEnvelope, label: str
     ) -> WorkerExecution:
         attempt_dir = self.workspace.job_attempt_dir(record.job_id, record.attempt, create=True)
-        request_path = attempt_dir / f"argn-{label}-request-{request.request_id}.json"
+        worker_kind = request.worker_kind
+        request_path = attempt_dir / (f"{worker_kind}-{label}-request-{request.request_id}.json")
         if not request_path.exists():
             _atomic_bytes(request_path, request.model_dump_json().encode("utf-8"))
-        execution = await self.adapter.run(
+        selected_adapter = self.eval_adapter if worker_kind == "eval" else self.adapter
+        execution = await selected_adapter.run(
             request_path,
-            attempt_dir / f"argn-{label}-events-{request.request_id}.jsonl",
-            attempt_dir / f"argn-{label}-result-{request.request_id}.json",
-            stdout_path=attempt_dir / f"argn-{label}.stdout",
-            stderr_path=attempt_dir / f"argn-{label}.stderr",
+            attempt_dir / f"{worker_kind}-{label}-events-{request.request_id}.jsonl",
+            attempt_dir / f"{worker_kind}-{label}-result-{request.request_id}.json",
+            stdout_path=attempt_dir / f"{worker_kind}-{label}.stdout",
+            stderr_path=attempt_dir / f"{worker_kind}-{label}.stderr",
         )
         return execution
 
@@ -837,7 +1219,7 @@ class UtilityJobRuntime:
         private_plan: Mapping[str, Any],
         output_path: Path,
         rejection: Any,
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], dict[str, SnapshotFile]]:
         exact = exact_full_scan(
             output_path,
             expected_columns=compiled.columns,
@@ -898,7 +1280,7 @@ class UtilityJobRuntime:
             config=config,
             grouping_scope="utility_internal",
         )
-        return {
+        evaluation = {
             "version": "1.0",
             "configuration": config.model_dump(mode="json"),
             "exact": exact.model_dump(mode="json"),
@@ -916,6 +1298,141 @@ class UtilityJobRuntime:
                 "train_threshold_u64": private_plan.get("train_threshold_u64"),
             },
         }
+        attempt_dir = self.workspace.job_attempt_dir(record.job_id, record.attempt, create=True)
+        inputs: dict[str, SnapshotFile] = {}
+        for role, table in {
+            "real_train_eval": train_final.slice(0, 10_000),
+            "real_holdout": holdout_final.slice(0, 10_000),
+            "synthetic": synthetic.slice(0, 10_000),
+        }.items():
+            path = attempt_dir / f"eval-{role}.json"
+            payload = json.dumps(
+                {"columns": table.to_pydict()},
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            ).encode("utf-8")
+            _atomic_bytes(path, payload)
+            digest, size = sha256_file(path)
+            inputs[role] = SnapshotFile(
+                path=path.relative_to(self.workspace.root).as_posix(),
+                sha256=digest,
+                size_bytes=size,
+            )
+        return evaluation, inputs
+
+    def _evaluate_dp_curator(
+        self,
+        record: JobRecord,
+        request: DifferentialPrivacySynthesisRequest,
+        compiled: CompiledRules,
+        output_path: Path,
+    ) -> tuple[dict[str, Any], dict[str, SnapshotFile]]:
+        codecs = StructuralCodecs(fixed_tuples={})
+        exact = exact_full_scan(
+            output_path,
+            expected_columns=compiled.columns,
+            requested_rows=request.output_rows,
+            compiled_rules=compiled,
+            codecs=codecs,
+            expected_hard_rule_violations=0,
+        )
+        manifest = self.repository.get_dataset_manifest(request.dataset_id)
+        source = self.workspace.resolve_relative(
+            manifest.normalized.relative_path,
+            require_exists=True,
+        )
+        # The published key_commitment must hide the key, so it cannot be derived from
+        # the job id that the released report prints in plain text.
+        partition_key = secrets.token_bytes(32)
+        with duckdb.connect() as connection:
+            partition = register_hmac_partition_sql(
+                connection,
+                key=partition_key,
+                normalized_parquet=source,
+            )
+            projection = "* EXCLUDE (__sts_row_id, __sts_partition_score, __sts_priority)"
+            limit = min(200_000, max(1, request.output_rows))
+            train = connection.execute(
+                f"SELECT {projection} FROM {partition.source_sql} "
+                f"WHERE {partition.train_predicate()} "
+                "ORDER BY __sts_priority, __sts_row_id LIMIT ?",
+                [limit],
+            ).to_arrow_table()
+            holdout = connection.execute(
+                f"SELECT {projection} FROM {partition.source_sql} "
+                f"WHERE {partition.holdout_predicate()} "
+                "ORDER BY __sts_priority, __sts_row_id LIMIT ?",
+                [limit],
+            ).to_arrow_table()
+        train_final = repair_and_validate_candidate(
+            prepare_model_batch(train, compiled, codecs=codecs, retain_non_model=True),
+            compiled,
+            codecs=codecs,
+        ).table
+        holdout_final = repair_and_validate_candidate(
+            prepare_model_batch(holdout, compiled, codecs=codecs, retain_non_model=True),
+            compiled,
+            codecs=codecs,
+        ).table
+        if train_final.num_rows == 0 or holdout_final.num_rows == 0:
+            raise DomainError(
+                ErrorCode.OUTPUT_INVALID,
+                "DP curator evaluation requires nonempty train and holdout partitions",
+            )
+        evaluation_seed = request.privacy.sampling_seed
+        synthetic, synthetic_manifest = deterministic_hmac_sample(
+            output_path,
+            max_rows=min(200_000, request.output_rows),
+            seed=evaluation_seed,
+            namespace="dp-curator-runtime-synthetic",
+        )
+        config = EvaluationConfig(master_seed=evaluation_seed)
+        primary = evaluate_primary(
+            train_final,
+            holdout_final,
+            synthetic,
+            columns=compiled.columns,
+            config=config,
+            grouping_scope="utility_internal",
+        )
+        evaluation = {
+            "version": "1.0",
+            "configuration": config.model_dump(mode="json"),
+            "exact": exact.model_dump(mode="json"),
+            "primary": primary.model_dump(mode="json"),
+            "synthetic_sample": synthetic_manifest.model_dump(mode="json"),
+            "partition": {
+                "key_commitment_sha256": hashlib.sha256(partition_key).hexdigest(),
+                "train_threshold_u64": partition.train_threshold_u64,
+            },
+        }
+        attempt_dir = self.workspace.job_attempt_dir(
+            record.job_id,
+            record.attempt,
+            create=True,
+        )
+        inputs: dict[str, SnapshotFile] = {}
+        for role, table in {
+            "real_train_eval": train_final.slice(0, 10_000),
+            "real_holdout": holdout_final.slice(0, 10_000),
+            "synthetic": synthetic.slice(0, 10_000),
+        }.items():
+            path = attempt_dir / f"eval-{role}.json"
+            payload = json.dumps(
+                {"columns": table.to_pydict()},
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            ).encode("utf-8")
+            _atomic_bytes(path, payload)
+            digest, size = sha256_file(path)
+            inputs[role] = SnapshotFile(
+                path=path.relative_to(self.workspace.root).as_posix(),
+                sha256=digest,
+                size_bytes=size,
+            )
+        return evaluation, inputs
 
     def _stage_exports(
         self,
@@ -987,13 +1504,17 @@ class UtilityJobRuntime:
         return items
 
     def _publish_exports(
-        self, record: JobRecord, staged: Iterable[Mapping[str, Any]]
+        self,
+        record: JobRecord,
+        staged: Iterable[Mapping[str, Any]],
+        *,
+        release_safe: bool = False,
     ) -> list[ArtifactManifest]:
         artifacts: list[ArtifactManifest] = []
         for item in staged:
             safety = ArtifactSafety(
                 downloadable=bool(item["downloadable"]),
-                release_safe=False,
+                release_safe=release_safe,
                 contains_private_source_information=False,
             )
             relative = f"jobs/{record.job_id}/attempt-{record.attempt}/exports/{item['filename']}"

@@ -292,7 +292,11 @@ def _request_payload(
             "workspace_root": str(root),
             "files": files,
         },
-        "limits": {"worker_rss_bytes": 512 * 1024**2, "argn": argn_config},
+        "limits": {
+            "worker_rss_bytes": 512 * 1024**2,
+            "max_process_tree_rss_bytes": 512 * 1024**2,
+            "argn": argn_config,
+        },
         "cancellation_path": f"jobs/{job_id}/attempt-1/cancel",
     }
 

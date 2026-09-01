@@ -20,7 +20,7 @@ from sts.storage.repository import ArtifactScope
 _CHUNK_SIZE = 1024 * 1024
 _REPORT_KINDS = {
     "primary_utility": "primary_report_json",
-    "primary_dp": "dp_release_report_json",
+    "primary_dp": "primary_report_json",
     "release": "dp_release_report_json",
     "internal": "internal_diagnostic_report_json",
 }
@@ -183,9 +183,9 @@ class ArtifactService:
                 else ErrorCode.ARTIFACT_NOT_READY
             )
             raise DomainError(code, f"{report} report is not available")
-        if (
-            report == "release" or (report == "primary" and request.mode == "differential_privacy")
-        ) and (not selected.release_safe or selected.contains_private_source_information):
+        if report == "release" and (
+            not selected.release_safe or selected.contains_private_source_information
+        ):
             raise DomainError(
                 ErrorCode.REPORT_NOT_RELEASE_SAFE,
                 "report does not satisfy the exact DP release-safety predicate",

@@ -238,7 +238,7 @@ def test_residual_rejection_exact_target_and_exhaustion_cleanup(
         for column in verify["SAMPLE_COLUMNS"]
         if column
         not in {
-            "Index",
+            "ROW_INDEX",
             "REP_SEX_CODE",
             "INDUSTRY_CODE",
             "EMP_ALL_TOTAL",

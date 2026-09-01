@@ -75,6 +75,13 @@ async function mockStudioApi(page: Page, sourceFormat: "csv" | "xlsx"): Promise<
       await route.fulfill({ status: 204, headers: { "Set-Cookie": "sts_session=test; HttpOnly; SameSite=Strict; Path=/" } });
       return;
     }
+    if (path === "/api/v1/datasets" && method === "GET") {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ version: "1.0", datasets: [] }),
+      });
+      return;
+    }
     if (path === "/api/v1/datasets/uploads" && method === "POST") {
       await route.fulfill({
         status: 201,
@@ -287,14 +294,14 @@ async function chooseLogicalLargeFile(page: Page, name: string, mimeType: string
   }, LARGE_LOGICAL_SIZE);
 }
 
-test("CSV six-step flow uploads chunks, resolves conflicts, resumes, and reports", async ({ page }) => {
+test("CSV six-step flow uploads chunks, resolves conflicts, resumes, and reports", async ({ page, browserName }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await installMemoryAudit(page);
   const state = await mockStudioApi(page, "csv");
   await page.goto("/");
 
   await expect(page.getByRole("status")).toContainText("준비되었습니다");
-  await page.keyboard.press("Tab");
+  await page.keyboard.press(browserName === "webkit" ? "Alt+Tab" : "Tab");
   await expect(page.getByRole("link", { name: /본문으로 건너뛰기/ })).toBeFocused();
 
   await chooseLogicalLargeFile(page, "people.csv", "text/csv");
@@ -308,6 +315,9 @@ test("CSV six-step flow uploads chunks, resolves conflicts, resumes, and reports
   await expect(page.getByRole("heading", { name: "열 스키마 확인" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "열 스키마 확인" })).toBeFocused();
   await expect(page.getByText("확인 필요")).toBeVisible();
+  await page.getByLabel("열 검색").fill("code");
+  await expect(page.getByText("1 / 3열 표시")).toBeVisible();
+  await page.getByLabel("열 검색").clear();
   await page.getByLabel("code 유형").selectOption("categorical");
   await page.getByRole("button", { name: "스키마 저장" }).click();
 
@@ -329,7 +339,7 @@ test("CSV six-step flow uploads chunks, resolves conflicts, resumes, and reports
   await page.getByRole("button", { name: "규칙 저장하고 정규화" }).click();
 
   await expect(page.getByRole("heading", { name: "생성 모드와 자원" })).toBeVisible();
-  await expect(page.getByRole("radio", { name: /형식적 차등프라이버시/ })).toBeDisabled();
+  await expect(page.getByRole("radio", { name: /형식적 차등프라이버시/ })).toBeEnabled();
   await expect(page.locator("#dp-audit")).toContainText("공개 sampling seed");
   await expect(page.getByText(/수학적 보호 보장은 없습니다/).first()).toBeVisible();
   await page.getByRole("checkbox", { name: "CSV" }).check();
@@ -346,6 +356,9 @@ test("CSV six-step flow uploads chunks, resolves conflicts, resumes, and reports
   await expect(page.getByTestId("report-chart")).toBeVisible();
   await expect(page.getByRole("heading", { name: "보고서 해설" })).toBeVisible();
   await expect(page.getByText(/100,000행을 요청했고 실제 100,000행/)).toBeVisible();
+  await expect(page.getByText("외부 공개 미승인", { exact: true })).toBeVisible();
+  await expect(page.getByText("내부 검토용 · 원본 정보 포함 가능", { exact: true })).toBeVisible();
+  await expect(page.getByText(/다운로드 가능.*외부 공개 가능/)).toBeVisible();
   const download = page.getByRole("link", { name: "파일 받기" }).first();
   await expect(download).toHaveAttribute("href", "/api/v1/artifacts/44444444-4444-4444-8444-444444444444/download");
   await expect(download).not.toHaveAttribute("download", /.+/);
@@ -379,14 +392,14 @@ test("CSV six-step flow uploads chunks, resolves conflicts, resumes, and reports
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
-test("XLSX sheet branch is keyboard-operable and responsive", async ({ page }) => {
+test("XLSX sheet branch is keyboard-operable and responsive", async ({ page, browserName }) => {
   await page.setViewportSize({ width: 768, height: 900 });
   await installMemoryAudit(page);
   await mockStudioApi(page, "xlsx");
   await page.goto("/");
   await expect(page.getByRole("status")).toContainText("준비되었습니다");
 
-  await page.keyboard.press("Tab");
+  await page.keyboard.press(browserName === "webkit" ? "Alt+Tab" : "Tab");
   await expect(page.getByRole("link", { name: /본문으로 건너뛰기/ })).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("main")).toBeFocused();
@@ -408,4 +421,202 @@ test("XLSX sheet branch is keyboard-operable and responsive", async ({ page }) =
   expect(audit.arrayBuffer).toBe(0);
   expect(audit.blobConstructor).toBe(0);
   expect(audit.objectUrl).toBe(0);
+});
+
+test("reload restores the latest normalized dataset without browser storage", async ({ page }) => {
+  await page.route("**/api/v1/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/api/v1/bootstrap") {
+      await route.fulfill({ status: 204 });
+      return;
+    }
+    if (url.pathname === "/api/v1/datasets") {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          version: "1.0",
+          datasets: [{
+            dataset_id: DATASET_ID,
+            state: "normalized",
+            manifest_sha256: MANIFEST_SHA,
+            filename: "recovered.csv",
+            size_bytes: 128,
+            source_format: "csv",
+            upload_offset: 128,
+            created_at: "2026-07-27T00:00:00Z",
+            updated_at: "2026-07-27T00:01:00Z",
+          }],
+        }),
+      });
+      return;
+    }
+    if (url.pathname === `/api/v1/datasets/${DATASET_ID}/profile`) {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          version: "1.0",
+          view: "raw",
+          row_count: 1200,
+          column_count: 1,
+          columns: [{
+            name: "age",
+            storage_type: "VARCHAR",
+            row_count: 1200,
+            null_count: 0,
+            nonnull_count: 1200,
+            minimum: "18",
+            maximum: "89",
+            approx_cardinality: 72,
+            candidate_type: "integer",
+          }],
+        }),
+      });
+      return;
+    }
+    if (url.pathname === `/api/v1/datasets/${DATASET_ID}/schema`) {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          version: "1.0",
+          dataset_id: DATASET_ID,
+          schema_version: "recovered-schema",
+          columns: [{ name: "age", kind: "integer", nullable: false, role: "model" }],
+        }),
+      });
+      return;
+    }
+    if (url.pathname === `/api/v1/datasets/${DATASET_ID}/rules`) {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          version: "1.0",
+          dataset_id: DATASET_ID,
+          rules_version: "recovered-rules",
+          rules: [],
+        }),
+      });
+      return;
+    }
+    if (url.pathname === "/api/v1/jobs") {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ version: "1.0", jobs: [] }),
+      });
+      return;
+    }
+    await route.fulfill({ status: 404 });
+  });
+
+  await page.goto("/");
+  await expect(page.getByRole("status")).toContainText("정규화된 데이터셋을 복원");
+  await expect(page.getByRole("region", { name: "생성 모드와 자원" })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("region", { name: "생성 모드와 자원" })).toBeVisible();
+  await expect(page.getByRole("spinbutton", { name: "출력 행 수" })).toHaveValue("100000");
+});
+
+test("restored DP job preserves the release ledger and boundary", async ({ page }) => {
+  await page.route("**/api/v1/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const json = (body: unknown) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(body),
+    });
+    if (path === "/api/v1/bootstrap") return route.fulfill({ status: 204 });
+    if (path === "/api/v1/datasets") return json({
+      version: "1.0",
+      datasets: [{
+        dataset_id: DATASET_ID,
+        state: "normalized",
+        manifest_sha256: MANIFEST_SHA,
+        filename: "dp-source.csv",
+        size_bytes: 128,
+        source_format: "csv",
+        upload_offset: 128,
+        created_at: "2026-07-27T00:00:00Z",
+        updated_at: "2026-07-27T00:01:00Z",
+      }],
+    });
+    if (path === `/api/v1/datasets/${DATASET_ID}/profile`) return json({
+      version: "1.0",
+      view: "raw",
+      row_count: 1200,
+      column_count: 1,
+      columns: [{
+        name: "age",
+        storage_type: "BIGINT",
+        row_count: 1200,
+        null_count: 0,
+        nonnull_count: 1200,
+        minimum: 18,
+        maximum: 89,
+        approx_cardinality: 72,
+        candidate_type: "integer",
+      }],
+    });
+    if (path === `/api/v1/datasets/${DATASET_ID}/schema`) return json({
+      version: "1.0",
+      dataset_id: DATASET_ID,
+      schema_version: "dp-schema",
+      columns: [{ name: "age", kind: "integer", nullable: false, role: "model" }],
+    });
+    if (path === `/api/v1/datasets/${DATASET_ID}/rules`) return json({
+      version: "1.0",
+      dataset_id: DATASET_ID,
+      rules_version: "dp-rules",
+      rules: [],
+    });
+    if (path === "/api/v1/jobs") return json({
+      version: "1.0",
+      jobs: [{
+        job_id: JOB_ONE,
+        dataset_id: DATASET_ID,
+        state: "succeeded",
+        attempt: 1,
+        mode: "differential_privacy",
+        synthesizer: "mst",
+        output_rows: 1000,
+        created_at: "2026-07-27T00:02:00Z",
+        updated_at: "2026-07-27T00:03:00Z",
+        legal_actions: [],
+      }],
+    });
+    if (path === `/api/v1/jobs/${JOB_ONE}/artifacts`) return json({
+      version: "1.0",
+      job_id: JOB_ONE,
+      scope: "downloadable",
+      artifacts: [{
+        artifact_id: "44444444-4444-4444-8444-444444444444",
+        job_id: JOB_ONE,
+        kind: "dp_release_report_json",
+        size_bytes: 512,
+        sha256: "b".repeat(64),
+        downloadable: true,
+        release_safe: true,
+        contains_private_source_information: false,
+      }],
+    });
+    if (path === `/api/v1/jobs/${JOB_ONE}/reports/release`) return json({
+      version: "1.0",
+      report_kind: "dp_release",
+      mode: "differential_privacy",
+      privacy_notice: "Ledgered row-level differential privacy release.",
+      ledger: {
+        privacy_unit: "row",
+        adjacency: "add_remove_one_row",
+        epsilon_model: "3",
+        delta: "0.000001",
+      },
+      output: { requested_rows: 1000, actual_rows: 1000 },
+      release_safe: true,
+      contains_private_source_information: false,
+    });
+    return route.fulfill({ status: 404 });
+  });
+
+  await page.goto("/");
+  await expect(page.getByText("완료 · formal DP")).toBeVisible();
+  await expect(page.getByText("DP 공개 경계 통과")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "형식적 DP 공개 요약" })).toBeVisible();
+  await expect(page.getByText("add_remove_one_row")).toBeVisible();
 });

@@ -1630,7 +1630,7 @@ def evaluate_advanced(
             task=task,
             seed=derive_seed(seed, "downstream-utility"),
         )
-    if "empirical_privacy" in requested and mode == "utility" and report_scope == "internal":
+    if "empirical_privacy" in requested and report_scope == "internal":
         output["empirical_privacy"] = {
             "release_safe": False,
             "formal_privacy_guarantee": False,

@@ -51,7 +51,9 @@ class AdapterError(RuntimeError):
 
 class CancellationRequested(AdapterError):
     def __init__(self, stage: str) -> None:
-        super().__init__("CANCELLED", "ARGN operation was cancelled", details={"stage": stage})
+        super().__init__(
+            "CANCELLED", "ARGN operation was cancelled", details={"stage": stage}
+        )
 
 
 @dataclass(frozen=True)
@@ -95,7 +97,9 @@ class DeterministicSplitConfig:
     def from_mapping(cls, raw: object) -> DeterministicSplitConfig:
         value = _object(raw, "deterministic_split")
         _exact_keys(
-            value, {"callable_fraction", "fallback_fraction", "seed"}, "deterministic_split"
+            value,
+            {"callable_fraction", "fallback_fraction", "seed"},
+            "deterministic_split",
         )
         callable_fraction = _number(value["callable_fraction"], "callable_fraction")
         fallback_fraction = _number(value["fallback_fraction"], "fallback_fraction")
@@ -140,7 +144,9 @@ class FitConfig:
         )
         max_epochs = _positive_int(value["max_epochs"], "max_epochs")
         if max_epochs > 10_000:
-            raise AdapterError("WORKER_REQUEST_INVALID", "max_epochs is unreasonably large")
+            raise AdapterError(
+                "WORKER_REQUEST_INVALID", "max_epochs is unreasonably large"
+            )
         max_minutes = _number(value["max_minutes"], "max_minutes")
         if max_minutes <= 0:
             raise AdapterError("WORKER_REQUEST_INVALID", "max_minutes must be positive")
@@ -153,7 +159,9 @@ class FitConfig:
             max_epochs=max_epochs,
             max_minutes=max_minutes,
             device=_string(value["device"], "device"),
-            deterministic_split=DeterministicSplitConfig.from_mapping(value["deterministic_split"]),
+            deterministic_split=DeterministicSplitConfig.from_mapping(
+                value["deterministic_split"]
+            ),
             checkpoint_compatibility=CheckpointCompatibility.from_mapping(
                 value["checkpoint_compatibility"]
             ),
@@ -216,13 +224,19 @@ class GenerateConfig:
                 },
             )
         shard_index = value["shard_index"]
-        if isinstance(shard_index, bool) or not isinstance(shard_index, int) or shard_index < 0:
+        if (
+            isinstance(shard_index, bool)
+            or not isinstance(shard_index, int)
+            or shard_index < 0
+        ):
             raise AdapterError(
                 "WORKER_REQUEST_INVALID", "shard_index must be a nonnegative integer"
             )
         seed_count = _positive_int(value["seed_count"], "seed_count")
         if shard_index >= seed_count:
-            raise AdapterError("WORKER_REQUEST_INVALID", "shard_index must be less than seed_count")
+            raise AdapterError(
+                "WORKER_REQUEST_INVALID", "shard_index must be less than seed_count"
+            )
         return cls(
             checkpoint_path=validate_workspace_relative_path(
                 _string(value["checkpoint_path"], "checkpoint_path")
@@ -255,12 +269,14 @@ class DeterministicSplitter:
         if not isinstance(keys, pd.Series):
             keys = pd.Series(keys)
         if not keys.is_unique:
-            raise AdapterError("BACKEND_INCOMPATIBLE", "engine split keys must be unique")
+            raise AdapterError(
+                "BACKEND_INCOMPATIBLE", "engine split keys must be unique"
+            )
         count = len(keys)
         train_count = round(self.config.callable_fraction * count)
-        hashed = pd.util.hash_pandas_object(keys, index=False, categorize=True).to_numpy(
-            dtype=np.uint64, copy=True
-        )
+        hashed = pd.util.hash_pandas_object(
+            keys, index=False, categorize=True
+        ).to_numpy(dtype=np.uint64, copy=True)
         hashed ^= np.uint64(self.config.seed)
         state = hashed
         state ^= state >> np.uint64(30)
@@ -288,7 +304,8 @@ class DeterministicSplitter:
         second_metrics = dict(self.last_metrics or {})
         deterministic = (
             first_metrics["training_sha256"] == second_metrics["training_sha256"]
-            and first_metrics["validation_sha256"] == second_metrics["validation_sha256"]
+            and first_metrics["validation_sha256"]
+            == second_metrics["validation_sha256"]
         )
         expected_training = round(self.config.fallback_fraction * row_count)
         fallback_first = keys.sample(frac=1, random_state=self.config.seed)
@@ -363,11 +380,15 @@ def fit_checkpoint(
     sample = resolved_files[BOUNDED_SAMPLE_SNAPSHOT_KEY]
     checkpoint = confined_output_path(workspace_root, config.checkpoint_path)
     if checkpoint.exists():
-        raise AdapterError("ARTIFACT_ALREADY_EXISTS", "checkpoint output already exists")
+        raise AdapterError(
+            "ARTIFACT_ALREADY_EXISTS", "checkpoint output already exists"
+        )
 
     staging = checkpoint.with_name(f".{checkpoint.name}.part-{uuid.uuid4().hex}")
     if staging.exists():
-        raise AdapterError("ARTIFACT_ALREADY_EXISTS", "checkpoint staging path already exists")
+        raise AdapterError(
+            "ARTIFACT_ALREADY_EXISTS", "checkpoint staging path already exists"
+        )
 
     frame = None
     split_metrics: dict[str, Any] = {}
@@ -383,7 +404,10 @@ def fit_checkpoint(
         staging.mkdir(mode=0o700)
         splitter = DeterministicSplitter(config.deterministic_split)
         split_metrics = splitter.verify_parity(len(frame))
-        stage("split", {"rows": len(frame), "training_rows": split_metrics["training_rows"]})
+        stage(
+            "split",
+            {"rows": len(frame), "training_rows": split_metrics["training_rows"]},
+        )
         set_random_state(config.deterministic_split.seed)
         engine.split(tgt_data=frame, trn_val_split=splitter, workspace_dir=staging)
         actual_split = _engine_split_rows(staging)
@@ -442,7 +466,9 @@ def fit_checkpoint(
             "engine_workspace": engine_workspace,
             "feature_gates": {"multiprocess_clones": False},
         }
-        _write_atomic_file(staging / CHECKPOINT_TAG_FILENAME, canonical_json_bytes(tags))
+        _write_atomic_file(
+            staging / CHECKPOINT_TAG_FILENAME, canonical_json_bytes(tags)
+        )
         _make_checkpoint_files_read_only(staging)
         _fsync_tree(staging)
         os.replace(staging, checkpoint)
@@ -496,21 +522,28 @@ def generate_candidate(
             "BACKEND_INCOMPATIBLE", "checkpoint compatibility tags do not match request"
         )
     if tags.get("feature_gates", {}).get("multiprocess_clones") is not False:
-        raise AdapterError("BACKEND_INCOMPATIBLE", "checkpoint does not carry the local clone gate")
+        raise AdapterError(
+            "BACKEND_INCOMPATIBLE", "checkpoint does not carry the local clone gate"
+        )
 
     candidate = confined_output_path(workspace_root, config.candidate_output_path)
     if candidate.exists():
         raise AdapterError("ARTIFACT_ALREADY_EXISTS", "candidate output already exists")
     clone = candidate.parent / f".argn-checkpoint-clone-{uuid.uuid4().hex}"
-    candidate_staging = candidate.with_name(f".{candidate.name}.part-{uuid.uuid4().hex}")
+    candidate_staging = candidate.with_name(
+        f".{candidate.name}.part-{uuid.uuid4().hex}"
+    )
     try:
         check_cancelled("clone_checkpoint")
-        stage("cloning_checkpoint", {"checkpoint_files": checkpoint_before["file_count"]})
+        stage(
+            "cloning_checkpoint", {"checkpoint_files": checkpoint_before["file_count"]}
+        )
         _clone_checkpoint(checkpoint, clone)
         clone_before = directory_digest(clone)
         if clone_before["sha256"] != checkpoint_before["sha256"]:
             raise AdapterError(
-                "CHECKSUM_MISMATCH", "checkpoint clone does not match published checkpoint"
+                "CHECKSUM_MISMATCH",
+                "checkpoint clone does not match published checkpoint",
             )
 
         check_cancelled("generate")
@@ -543,7 +576,10 @@ def generate_candidate(
             raise AdapterError(
                 "OUTPUT_INVALID",
                 "generated candidate row count does not match request",
-                details={"requested_rows": config.candidate_rows, "actual_rows": actual_rows},
+                details={
+                    "requested_rows": config.candidate_rows,
+                    "actual_rows": actual_rows,
+                },
             )
         clone_after = directory_digest(clone)
         checkpoint_after = directory_digest(checkpoint)
@@ -552,7 +588,9 @@ def generate_candidate(
                 "CHECKSUM_MISMATCH", "generation modified checkpoint files in its clone"
             )
         if checkpoint_after["sha256"] != checkpoint_before["sha256"]:
-            raise AdapterError("CHECKSUM_MISMATCH", "generation modified the published checkpoint")
+            raise AdapterError(
+                "CHECKSUM_MISMATCH", "generation modified the published checkpoint"
+            )
 
         check_cancelled("publish_candidate")
         stage("publishing_candidate", {"rows": actual_rows})
@@ -597,7 +635,9 @@ def generate_candidate(
 
 def directory_digest(root: Path) -> dict[str, Any]:
     if not root.is_dir():
-        raise AdapterError("CHECKSUM_MISMATCH", f"checkpoint directory is missing: {root.name}")
+        raise AdapterError(
+            "CHECKSUM_MISMATCH", f"checkpoint directory is missing: {root.name}"
+        )
     digest = hashlib.sha256()
     size_bytes = 0
     files = _regular_files(root)
@@ -611,7 +651,11 @@ def directory_digest(root: Path) -> dict[str, Any]:
             while chunk := handle.read(1024 * 1024):
                 digest.update(chunk)
         size_bytes += file_size
-    return {"sha256": digest.hexdigest(), "size_bytes": size_bytes, "file_count": len(files)}
+    return {
+        "sha256": digest.hexdigest(),
+        "size_bytes": size_bytes,
+        "file_count": len(files),
+    }
 
 
 def file_digest(path: Path) -> dict[str, Any]:
@@ -644,7 +688,8 @@ def _load_bounded_sample(path: Path, config: FitConfig) -> tuple[Any, dict[str, 
         )
     if "__sts_row_id" in parquet.schema_arrow.names:
         raise AdapterError(
-            "WORKER_REQUEST_INVALID", "bounded training sample must not expose __sts_row_id"
+            "WORKER_REQUEST_INVALID",
+            "bounded training sample must not expose __sts_row_id",
         )
     if len(parquet.schema_arrow.names) != len(set(parquet.schema_arrow.names)):
         raise AdapterError(
@@ -710,7 +755,8 @@ def _estimate_pandas_deep_bytes(table: Any) -> int:
             total += rows * 36
         elif pa.types.is_nested(data_type):
             raise AdapterError(
-                "WORKER_REQUEST_INVALID", "nested Arrow types are not supported by the ARGN adapter"
+                "WORKER_REQUEST_INVALID",
+                "nested Arrow types are not supported by the ARGN adapter",
             )
         else:
             total += max(rows * 8, column.nbytes)
@@ -730,7 +776,9 @@ def _split_metrics(
     training_values = training.to_numpy(copy=False)
     validation_values = validation.to_numpy(copy=False)
     if len(training) + len(validation) != total:
-        raise AdapterError("BACKEND_INCOMPATIBLE", "deterministic split is not complete")
+        raise AdapterError(
+            "BACKEND_INCOMPATIBLE", "deterministic split is not complete"
+        )
     return {
         "callable_fraction": config.callable_fraction,
         "seed": config.seed,
@@ -745,9 +793,15 @@ def _verify_checkpoint_snapshot(
     checkpoint: Path, resolved_files: Mapping[str, ResolvedSnapshotFile]
 ) -> None:
     if not resolved_files:
-        raise AdapterError("WORKER_REQUEST_INVALID", "generate requires checkpoint snapshot files")
-    checkpoint_files = {path.resolve(strict=True) for path in _regular_files(checkpoint)}
-    supplied_files = {entry.path.resolve(strict=True) for entry in resolved_files.values()}
+        raise AdapterError(
+            "WORKER_REQUEST_INVALID", "generate requires checkpoint snapshot files"
+        )
+    checkpoint_files = {
+        path.resolve(strict=True) for path in _regular_files(checkpoint)
+    }
+    supplied_files = {
+        entry.path.resolve(strict=True) for entry in resolved_files.values()
+    }
     if supplied_files != checkpoint_files:
         raise AdapterError(
             "WORKER_REQUEST_INVALID",
@@ -766,8 +820,13 @@ def _read_checkpoint_tags(checkpoint: Path) -> dict[str, Any]:
     try:
         value = json.loads(path.read_bytes())
     except (OSError, ValueError) as error:
-        raise AdapterError("CHECKSUM_MISMATCH", "checkpoint tags are missing or invalid") from error
-    if not isinstance(value, dict) or value.get("format_version") != CHECKPOINT_FORMAT_VERSION:
+        raise AdapterError(
+            "CHECKSUM_MISMATCH", "checkpoint tags are missing or invalid"
+        ) from error
+    if (
+        not isinstance(value, dict)
+        or value.get("format_version") != CHECKPOINT_FORMAT_VERSION
+    ):
         raise AdapterError("BACKEND_INCOMPATIBLE", "unsupported checkpoint tag format")
     engine = value.get("engine")
     if (
@@ -776,14 +835,17 @@ def _read_checkpoint_tags(checkpoint: Path) -> dict[str, Any]:
         or engine.get("wheel_sha256") != ENGINE_WHEEL_SHA256
     ):
         raise AdapterError(
-            "BACKEND_INCOMPATIBLE", "checkpoint engine identity does not match pinned engine"
+            "BACKEND_INCOMPATIBLE",
+            "checkpoint engine identity does not match pinned engine",
         )
     return value
 
 
 def _clone_checkpoint(source: Path, destination: Path) -> None:
     if destination.exists():
-        raise AdapterError("ARTIFACT_ALREADY_EXISTS", "checkpoint clone path already exists")
+        raise AdapterError(
+            "ARTIFACT_ALREADY_EXISTS", "checkpoint clone path already exists"
+        )
     shutil.copytree(source, destination, symlinks=False, copy_function=shutil.copy2)
     _make_checkpoint_files_read_only(destination)
 
@@ -794,9 +856,12 @@ def _move_generated_parquet(synthetic_data: Path, candidate_staging: Path) -> No
     generated = sorted(synthetic_data.rglob("*.parquet"))
     all_regular = _regular_files(synthetic_data)
     if len(generated) != 1 or set(generated) != set(all_regular):
-        raise AdapterError("OUTPUT_INVALID", "ARGN must create exactly one candidate parquet shard")
+        raise AdapterError(
+            "OUTPUT_INVALID", "ARGN must create exactly one candidate parquet shard"
+        )
     os.replace(generated[0], candidate_staging)
     _remove_tree(synthetic_data)
+
 
 def _drop_generated_index_column(candidate: Path) -> None:
     import pyarrow.parquet as pq
@@ -821,7 +886,9 @@ def _parquet_rows(root: Path, *, suffix: str | None = None) -> int:
 
     total = 0
     for path in _regular_files(root):
-        if path.suffix != ".parquet" or (suffix is not None and not path.name.endswith(suffix)):
+        if path.suffix != ".parquet" or (
+            suffix is not None and not path.name.endswith(suffix)
+        ):
             continue
         total += pq.ParquetFile(path).metadata.num_rows
     return total
@@ -838,16 +905,21 @@ def _regular_files(root: Path) -> list[Path]:
             files.append(path)
         elif not path.is_dir():
             raise AdapterError(
-                "CHECKSUM_MISMATCH", f"workspace contains a non-regular entry: {path.name}"
+                "CHECKSUM_MISMATCH",
+                f"workspace contains a non-regular entry: {path.name}",
             )
     return files
 
 
 def _confined_existing_directory(root: Path, relative: str) -> Path:
     workspace = root.resolve(strict=True)
-    candidate = (workspace / validate_workspace_relative_path(relative)).resolve(strict=True)
+    candidate = (workspace / validate_workspace_relative_path(relative)).resolve(
+        strict=True
+    )
     if not candidate.is_relative_to(workspace) or not candidate.is_dir():
-        raise AdapterError("WORKER_REQUEST_INVALID", "checkpoint path is not a confined directory")
+        raise AdapterError(
+            "WORKER_REQUEST_INVALID", "checkpoint path is not a confined directory"
+        )
     return candidate
 
 
@@ -885,7 +957,9 @@ def _fsync_tree(root: Path) -> None:
         finally:
             os.close(fd)
         directories.add(file.parent)
-    for directory in sorted(directories, key=lambda path: len(path.parts), reverse=True):
+    for directory in sorted(
+        directories, key=lambda path: len(path.parts), reverse=True
+    ):
         fsync_directory(directory)
 
 
@@ -910,7 +984,9 @@ def _verify_engine_installation() -> None:
     try:
         installed = importlib.metadata.version(ENGINE_DISTRIBUTION)
     except importlib.metadata.PackageNotFoundError as error:
-        raise AdapterError("BACKEND_INCOMPATIBLE", "mostlyai-engine is not installed") from error
+        raise AdapterError(
+            "BACKEND_INCOMPATIBLE", "mostlyai-engine is not installed"
+        ) from error
     if installed != ENGINE_VERSION:
         raise AdapterError(
             "BACKEND_INCOMPATIBLE",
@@ -919,10 +995,16 @@ def _verify_engine_installation() -> None:
 
 
 def _argn_limits(limits: Mapping[str, Any]) -> dict[str, Any]:
-    if set(limits) != {"worker_rss_bytes", "argn"}:
+    expected = {"worker_rss_bytes", "max_process_tree_rss_bytes", "argn"}
+    if set(limits) != expected:
         raise AdapterError(
             "WORKER_REQUEST_INVALID",
-            "worker limits must contain worker_rss_bytes and limits.argn",
+            "worker limits must contain worker and process-tree RSS leases plus limits.argn",
+        )
+    if limits["max_process_tree_rss_bytes"] != limits["worker_rss_bytes"]:
+        raise AdapterError(
+            "WORKER_REQUEST_INVALID",
+            "worker and process-tree RSS leases must match",
         )
     return _object(limits["argn"], "limits.argn")
 
@@ -937,7 +1019,9 @@ def _object(value: object, field: str) -> dict[str, Any]:
     return dict(value)
 
 
-def _exact_keys(value: Mapping[str, Any], expected: set[str] | frozenset[str], field: str) -> None:
+def _exact_keys(
+    value: Mapping[str, Any], expected: set[str] | frozenset[str], field: str
+) -> None:
     actual = set(value)
     if actual != set(expected):
         raise AdapterError(
@@ -952,24 +1036,38 @@ def _exact_keys(value: Mapping[str, Any], expected: set[str] | frozenset[str], f
 
 def _string(value: object, field: str) -> str:
     if not isinstance(value, str) or not value:
-        raise AdapterError("WORKER_REQUEST_INVALID", f"{field} must be a nonempty string")
+        raise AdapterError(
+            "WORKER_REQUEST_INVALID", f"{field} must be a nonempty string"
+        )
     return value
 
 
 def _positive_int(value: object, field: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-        raise AdapterError("WORKER_REQUEST_INVALID", f"{field} must be a positive integer")
+        raise AdapterError(
+            "WORKER_REQUEST_INVALID", f"{field} must be a positive integer"
+        )
     return value
 
 
 def _uint32(value: object, field: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 0xFFFFFFFF:
-        raise AdapterError("WORKER_REQUEST_INVALID", f"{field} must be a uint32 integer")
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or not 0 <= value <= 0xFFFFFFFF
+    ):
+        raise AdapterError(
+            "WORKER_REQUEST_INVALID", f"{field} must be a uint32 integer"
+        )
     return value
 
 
 def _number(value: object, field: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+    ):
         raise AdapterError("WORKER_REQUEST_INVALID", f"{field} must be a finite number")
     return float(value)
 
@@ -980,5 +1078,7 @@ def _sha256(value: object, field: str) -> str:
         or len(value) != _SHA256_LENGTH
         or any(character not in "0123456789abcdef" for character in value)
     ):
-        raise AdapterError("WORKER_REQUEST_INVALID", f"{field} must be a lowercase SHA-256 digest")
+        raise AdapterError(
+            "WORKER_REQUEST_INVALID", f"{field} must be a lowercase SHA-256 digest"
+        )
     return value

@@ -1,6 +1,13 @@
 import { expect, test } from "@playwright/test";
 
-test("mounts the accessible application shell", async ({ page }) => {
+test("mounts the accessible application shell", async ({ page, browserName }) => {
+  await page.route("**/api/v1/bootstrap", (route) => route.fulfill({ status: 204 }));
+  await page.route("**/api/v1/datasets?limit=1", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ version: "1.0", datasets: [] }),
+    }),
+  );
   await page.goto("/");
 
   await expect(page).toHaveTitle("Synthetic Table Studio");
@@ -13,6 +20,6 @@ test("mounts the accessible application shell", async ({ page }) => {
   await expect(page.getByRole("main")).toBeVisible();
   await expect(page.getByRole("status")).toContainText("준비되었습니다");
 
-  await page.keyboard.press("Tab");
+  await page.keyboard.press(browserName === "webkit" ? "Alt+Tab" : "Tab");
   await expect(page.getByRole("link", { name: "Skip to main content" })).toBeFocused();
 });

@@ -8,12 +8,57 @@ from sts.domain import ArtifactManifest
 from sts.storage import CatalogRepository
 
 from .builders import BuiltReport
+from .plain import PlainLanguageReport
 
 _REPORT_FILENAMES = {
     "utility_primary": ("primary-report.json", "primary-report.html"),
+    "dp_curator": ("dp-curator-report.json", "dp-curator-report.html"),
     "dp_release": ("dp-release-report.json", "dp-release-report.html"),
     "curator_internal": ("internal-diagnostic-report.json", "internal-diagnostic-report.html"),
 }
+
+
+def _report_directory(
+    job_id: UUID | str, attempt: int, relative_directory: str | None
+) -> PurePosixPath:
+    identifier = UUID(str(job_id))
+    directory = PurePosixPath(relative_directory or f"jobs/{identifier}/attempt-{attempt}/reports")
+    if directory.is_absolute() or any(part in {"", ".", ".."} for part in directory.parts):
+        raise ValueError("relative_directory must be a normalized workspace-relative path")
+    return directory
+
+
+def publish_plain_report_artifact(
+    repository: CatalogRepository,
+    plain: PlainLanguageReport,
+    *,
+    job_id: UUID | str,
+    attempt: int,
+    relative_directory: str | None = None,
+) -> ArtifactManifest:
+    """Publish the lay-reader HWPX companion of an already-classified report.
+
+    Safety flags are inherited verbatim from the source report, so this function
+    can never widen a release boundary on its own.
+    """
+
+    identifier = UUID(str(job_id))
+    directory = _report_directory(identifier, attempt, relative_directory)
+    payload = plain.hwpx_bytes()
+    manifest = ArtifactManifest(
+        artifact_id=uuid4(),
+        kind=plain.artifact_kind,
+        relative_path=(directory / plain.filename).as_posix(),
+        sha256=hashlib.sha256(payload).hexdigest(),
+        size_bytes=len(payload),
+        downloadable=plain.safety.downloadable,
+        release_safe=plain.safety.release_safe,
+        contains_private_source_information=plain.safety.contains_private_source_information,
+        job_id=identifier,
+        attempt=attempt,
+        metadata={"report_kind": plain.report_kind, "format": "hwpx", "audience": "plain"},
+    )
+    return repository.publish_artifact_bytes(manifest, payload)
 
 
 def publish_report_artifacts(
@@ -30,9 +75,7 @@ def publish_report_artifacts(
     """
 
     identifier = UUID(str(job_id))
-    directory = PurePosixPath(relative_directory or f"jobs/{identifier}/attempt-{attempt}/reports")
-    if directory.is_absolute() or any(part in {"", ".", ".."} for part in directory.parts):
-        raise ValueError("relative_directory must be a normalized workspace-relative path")
+    directory = _report_directory(identifier, attempt, relative_directory)
     json_filename, html_filename = _REPORT_FILENAMES[report.report_kind]
     payloads = (
         (report.json_artifact_kind, directory / json_filename, report.json_bytes()),

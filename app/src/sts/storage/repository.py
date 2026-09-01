@@ -399,6 +399,15 @@ class CatalogRepository:
             raise DomainError(ErrorCode.DATASET_NOT_FOUND, f"dataset not found: {dataset_id}")
         return self._dataset_record(row)
 
+    def list_datasets(self, *, limit: int = 20) -> tuple[DatasetRecord, ...]:
+        if limit < 1 or limit > 100:
+            raise ValueError("dataset list limit must be in 1..100")
+        rows = self._connection.execute(
+            "SELECT * FROM datasets ORDER BY updated_at DESC, id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return tuple(self._dataset_record(row) for row in rows)
+
     def get_dataset_manifest(self, dataset_id: UUID | str) -> DatasetManifest:
         row = self._connection.execute(
             "SELECT manifest_json FROM datasets WHERE id = ?", (str(dataset_id),)
@@ -616,6 +625,30 @@ class CatalogRepository:
         if row is None:
             raise DomainError(ErrorCode.JOB_NOT_FOUND, f"job not found: {job_id}")
         return self._job_record(row)
+
+    def list_jobs(
+        self,
+        *,
+        limit: int = 20,
+        dataset_id: UUID | str | None = None,
+    ) -> tuple[JobRecord, ...]:
+        if limit < 1 or limit > 100:
+            raise ValueError("job list limit must be in 1..100")
+        if dataset_id is None:
+            rows = self._connection.execute(
+                "SELECT * FROM jobs ORDER BY updated_at DESC, id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        else:
+            rows = self._connection.execute(
+                """
+                SELECT * FROM jobs
+                WHERE dataset_id = ?
+                ORDER BY updated_at DESC, id DESC LIMIT ?
+                """,
+                (str(dataset_id), limit),
+            ).fetchall()
+        return tuple(self._job_record(row) for row in rows)
 
     def get_job_request(self, job_id: UUID | str) -> SynthesisRequest:
         row = self._connection.execute(
@@ -1050,16 +1083,16 @@ class CatalogRepository:
         privacy_scope_id: UUID | str | None = None,
     ) -> PrivacyScopeRecord:
         digest = _validate_digest(dataset_manifest_sha256)
-        existing = self._connection.execute(
-            "SELECT * FROM privacy_scopes WHERE dataset_manifest_sha256 = ?", (digest,)
-        ).fetchone()
-        if existing is not None:
-            return self._privacy_scope_record(existing)
         identifier = (
             str(UUID(str(privacy_scope_id))) if privacy_scope_id is not None else str(uuid4())
         )
         timestamp = _now()
         with self._transaction() as connection:
+            existing = connection.execute(
+                "SELECT * FROM privacy_scopes WHERE dataset_manifest_sha256 = ?", (digest,)
+            ).fetchone()
+            if existing is not None:
+                return self._privacy_scope_record(existing)
             connection.execute(
                 """
                 INSERT INTO privacy_scopes(id, dataset_manifest_sha256, created_at)

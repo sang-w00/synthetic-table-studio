@@ -7,7 +7,7 @@
   --color-ink: #202621;
   --color-muted: #586158;
   --color-line: #c4cbc0;
-  --color-line-strong: #8f9a8e;
+  --color-line-strong: #7c8a7b;
   --color-accent: #1f6a52;
   --color-accent-strong: #154b3a;
   --color-accent-soft: #dce9df;
@@ -658,6 +658,24 @@ progress::-moz-progress-bar {
   color: var(--color-warning);
 }
 
+.schema-toolbar {
+  display: flex;
+  align-items: end;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.schema-toolbar label:first-child {
+  min-width: min(22rem, 100%);
+  flex: 1;
+}
+
+.schema-toolbar [role="status"] {
+  margin-left: auto;
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+}
+
 .table-wrap {
   width: 100%;
   overflow-x: auto;
@@ -806,6 +824,32 @@ tbody tr:last-child > * {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.download-boundary-note {
+  max-width: 68rem;
+  margin: var(--space-2) 0 0;
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+}
+
+.downloads li span.artifact-boundary {
+  display: inline-block;
+  width: fit-content;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  font-weight: 750;
+  text-overflow: clip;
+}
+
+.artifact-boundary.restricted {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
+.artifact-boundary.release-safe {
+  background: var(--color-accent-soft);
+  color: var(--color-accent-strong);
+}
+
 
 .text-button {
   padding: var(--space-2);
@@ -1152,6 +1196,39 @@ tbody tr:last-child > * {
   padding-block: var(--space-5);
 }
 
+.report-executive {
+  max-width: var(--content-reading);
+  margin-bottom: var(--space-6);
+  padding: var(--space-6);
+  border: var(--border-medium) solid var(--color-accent);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+
+.report-executive h3,
+.report-executive h4 {
+  font-family: var(--font-display);
+}
+
+.report-executive h3 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-size-xl);
+}
+
+.report-executive h4 {
+  margin: var(--space-5) 0 var(--space-2);
+  font-size: var(--font-size-lg);
+}
+
+.report-executive p,
+.report-executive li {
+  line-height: var(--line-height-body);
+}
+
+.report-executive .report-overall {
+  font-size: var(--font-size-lg);
+}
+
 .report-narrative {
   max-width: var(--content-reading);
   margin-bottom: var(--space-6);
@@ -1160,14 +1237,13 @@ tbody tr:last-child > * {
   background: var(--color-accent-soft);
 }
 
-.report-narrative h3 {
-  margin: 0 0 var(--space-3);
-  font-family: var(--font-display);
-  font-size: var(--font-size-lg);
+.report-narrative > summary {
+  cursor: pointer;
+  font-weight: 750;
 }
 
 .report-narrative p {
-  margin: var(--space-2) 0 0;
+  margin: var(--space-3) 0 0;
   color: var(--color-ink);
   line-height: var(--line-height-body);
 }
@@ -1225,6 +1301,25 @@ tbody tr:last-child > * {
 
 .downloads .button {
   flex: 0 0 auto;
+}
+
+.technical-downloads {
+  margin-top: var(--space-5);
+  padding: var(--space-4);
+  border: var(--border-thin) solid var(--color-line);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-strong);
+}
+
+.technical-downloads summary {
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.technical-downloads > p {
+  margin: var(--space-2) 0 0;
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
 }
 
 .site-footer {
@@ -1460,5 +1555,207 @@ tbody tr:last-child > * {
   *::after {
     scroll-behavior: auto !important;
     transition-duration: var(--transition-reduced) !important;
+  }
+}
+
+/* The one "this passed" signal in the app must not inherit the danger palette. */
+.report-callout.success {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-strong);
+}
+
+.report-verdict {
+  margin-top: var(--space-6);
+  padding: var(--space-5);
+  border: var(--border-thin) solid var(--color-line);
+  border-top: var(--space-1) solid var(--color-accent);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.report-verdict-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.report-verdict-head h3 {
+  margin: var(--space-1) 0 0;
+  font-family: var(--font-display);
+  font-size: var(--font-size-lg);
+  line-height: var(--line-height-tight);
+}
+
+.verdict-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+  margin: var(--space-5) 0 0;
+}
+
+.verdict-tiles > div {
+  padding: var(--space-3) var(--space-4);
+  border-left: var(--space-1) solid var(--color-line-strong);
+  background: var(--color-surface-strong);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.verdict-tiles > div[data-tone="pass"] {
+  border-left-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.verdict-tiles > div[data-tone="warn"] {
+  border-left-color: var(--color-warning);
+  background: var(--color-warning-soft);
+}
+
+.verdict-tiles dt {
+  color: var(--color-muted);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  letter-spacing: var(--letter-spacing-label);
+  text-transform: uppercase;
+}
+
+.verdict-tiles dd {
+  margin: var(--space-1) 0 0;
+  font-family: var(--font-display);
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.verdict-tiles p {
+  margin: var(--space-1) 0 0;
+  color: var(--color-muted);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-body);
+}
+
+.metric-list.explained p {
+  margin: var(--space-1) 0 0;
+  color: var(--color-muted);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-body);
+}
+
+.report-print-note {
+  max-width: var(--content-reading);
+  margin: var(--space-2) 0 0;
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+}
+
+.report-glossary {
+  margin-top: var(--space-6);
+  padding: var(--space-4);
+  border: var(--border-thin) solid var(--color-line);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-strong);
+}
+
+.report-glossary summary {
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.report-glossary dl {
+  display: grid;
+  gap: var(--space-3);
+  margin: var(--space-4) 0 0;
+}
+
+.report-glossary dt {
+  font-weight: 750;
+}
+
+.report-glossary dd {
+  margin: var(--space-1) 0 0;
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-body);
+}
+
+.download-group {
+  margin-top: var(--space-5);
+}
+
+.download-group h4 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--font-size-md);
+}
+
+.download-group > p {
+  margin: var(--space-1) 0 var(--space-2);
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-body);
+}
+
+.table-lead {
+  max-width: var(--content-reading);
+  margin: 0 0 var(--space-4);
+  color: var(--color-muted);
+  line-height: var(--line-height-body);
+}
+
+.report-table tr[data-attention="high"] {
+  background: var(--color-warning-soft);
+}
+
+.table-wrap:focus-visible {
+  outline: var(--focus-width) solid var(--color-focus);
+  outline-offset: var(--focus-offset);
+}
+
+@media (width <= 56rem) {
+  .verdict-tiles {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Printing the report stage must produce the whole report, not the app chrome. */
+@media print {
+  .step-rail,
+  .global-status,
+  .error-banner,
+  .action-row,
+  .downloads,
+  .report-tabs > [role="tablist"],
+  .report-executive > button,
+  .report-print-note {
+    display: none !important;
+  }
+
+  .report-tabs [role="tabpanel"][hidden] {
+    display: block !important;
+  }
+
+  body,
+  .stage-panel,
+  .report-verdict,
+  .verdict-tiles > div {
+    background: #fff !important;
+    box-shadow: none !important;
+  }
+
+  .report-glossary > summary {
+    list-style: none;
+  }
+
+  .report-glossary > dl {
+    display: grid !important;
+  }
+
+  .report-executive,
+  .report-verdict,
+  .metric-list div,
+  .report-table tr {
+    break-inside: avoid;
   }
 }

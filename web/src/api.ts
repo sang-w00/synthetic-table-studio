@@ -19,6 +19,34 @@ export interface DatasetSnapshot {
   legal_actions?: string[];
   progress?: ProgressEventPayload | null;
 }
+export interface RecoverableDataset extends DatasetSnapshot {
+  filename: string;
+  size_bytes: number;
+  source_format: "csv" | "xlsx";
+  upload_offset: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DatasetList {
+  version: "1.0";
+  datasets: RecoverableDataset[];
+}
+
+export interface PersistedSchema {
+  version: "1.0";
+  dataset_id: string;
+  schema_version: string;
+  columns: ColumnSchema[];
+}
+
+export interface PersistedRules {
+  version: "1.0";
+  dataset_id: string;
+  rules_version: string;
+  rules: RuleSpec[];
+}
+
 
 export interface UploadSession extends DatasetSnapshot {
   upload_id: string;
@@ -196,6 +224,19 @@ export interface JobSnapshot {
   progress?: ProgressEventPayload | null;
   legal_actions?: string[];
 }
+export interface RecoverableJob extends JobSnapshot {
+  mode: "utility" | "differential_privacy";
+  synthesizer: string;
+  output_rows: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface JobList {
+  version: "1.0";
+  jobs: RecoverableJob[];
+}
+
 
 export interface UtilitySynthesisRequest {
   version: "1.0";
@@ -219,6 +260,39 @@ export interface UtilitySynthesisRequest {
   };
 }
 
+export interface ManifestFile {
+  relative_path: string;
+  sha256: string;
+  size_bytes: number;
+}
+
+export interface DifferentialPrivacySynthesisRequest {
+  version: "1.0";
+  dataset_id: string;
+  dataset_manifest_sha: string;
+  schema_version: string;
+  rules_version: string;
+  mode: "differential_privacy";
+  synthesizer: "mst";
+  output_rows: number;
+  output_formats: Array<"parquet" | "csv">;
+  resource_profile: string;
+  evaluation_config_version: "1.0";
+  privacy: {
+    adjacency: "add_remove_one_row";
+    privacy_unit: "row";
+    epsilon_model: string;
+    delta: string;
+    epsilon_preprocess: 0;
+    public_metadata_manifest: ManifestFile;
+    public_target_count: number;
+    fit_sampling_rate: string;
+    sampling_seed: number;
+  };
+}
+
+export type SynthesisRequest = UtilitySynthesisRequest | DifferentialPrivacySynthesisRequest;
+
 export interface ArtifactManifest {
   artifact_id: string;
   kind: string;
@@ -235,10 +309,53 @@ export interface ArtifactList {
   artifacts: ArtifactManifest[];
 }
 
+export interface HostResources {
+  platform_system: string;
+  platform_machine: string;
+  logical_cpu_count: number;
+  total_memory_bytes: number;
+  available_memory_bytes: number;
+  disk_total_bytes: number;
+  disk_free_bytes: number;
+  gpu_backend: "none" | "mps" | "cuda";
+  gpu_device_count: number;
+  gpu_name: string | null;
+  gpu_memory_total_bytes: number | null;
+}
+
+export interface ResourcePlan {
+  resource_profile: string;
+  recommended_device: string;
+  worker_lease_bytes: number;
+  utility_max_rows: number;
+  duckdb_memory_limit_bytes: number;
+  max_concurrent_jobs: number;
+  disk_free_bytes: number;
+}
+
+export interface BootstrapResponse {
+  status: "ready";
+  host_resources: HostResources;
+  resource_plan: ResourcePlan;
+}
+
+export interface ReportSection {
+  heading: string;
+  paragraphs: string[];
+}
+
+export interface ExecutiveSummary {
+  overall_conclusion: string;
+  quality: ReportSection;
+  privacy: ReportSection;
+  limitations: string[];
+}
+
 export interface PrimaryReport {
   version?: string;
   summary?: Record<string, string | number | null>;
   narrative?: string[];
+  executive_summary?: ExecutiveSummary;
   evaluation?: PrimaryReport;
   columns?: Array<{
     name: string;
@@ -432,19 +549,24 @@ export interface UploadProgress {
 }
 
 export const api = {
-  async bootstrap(): Promise<void> {
+  async bootstrap(): Promise<BootstrapResponse> {
     const response = await fetch("/api/v1/bootstrap", { credentials: "same-origin" });
     if (!response.ok) throw await problemFrom(response);
+    return response.json() as Promise<BootstrapResponse>;
   },
 
-  async uploadFile(file: File, onProgress: (progress: UploadProgress) => void): Promise<DatasetSnapshot> {
+  async uploadFile(
+    file: File,
+    onProgress: (progress: UploadProgress) => void,
+    existing?: RecoverableDataset,
+  ): Promise<DatasetSnapshot> {
     const extension = file.name.split(".").pop()?.toLowerCase();
     if (extension !== "csv" && extension !== "xlsx") {
       throw new ApiProblem(422, "INPUT_FORMAT_UNSUPPORTED", "CSV 또는 XLSX 파일만 업로드할 수 있습니다.");
     }
     onProgress({ sent: 0, total: file.size, phase: "hashing" });
     const digest = await sha256File(file);
-    const session = await requestJson<UploadSession>("/api/v1/datasets/uploads", {
+    const session = existing ?? await requestJson<UploadSession>("/api/v1/datasets/uploads", {
       method: "POST",
       body: JSON.stringify({
         filename: file.name,
@@ -493,6 +615,12 @@ export const api = {
     });
   },
 
+  listDatasets: (limit = 20) =>
+    requestJson<DatasetList>(`/api/v1/datasets?limit=${limit}`),
+  getSchema: (datasetId: string) =>
+    requestJson<PersistedSchema>(`/api/v1/datasets/${datasetId}/schema`),
+  getRules: (datasetId: string) =>
+    requestJson<PersistedRules>(`/api/v1/datasets/${datasetId}/rules`),
   getDataset: (datasetId: string) =>
     requestJson<DatasetSnapshot>(`/api/v1/datasets/${datasetId}`),
   getParseOptions: (datasetId: string) =>
@@ -525,7 +653,12 @@ export const api = {
     ),
   normalize: (datasetId: string) =>
     requestJson<DatasetSnapshot>(`/api/v1/datasets/${datasetId}/normalize`, { method: "POST" }),
-  createJob: (request: UtilitySynthesisRequest) =>
+  publishPublicMetadata: (payload: Record<string, unknown>) =>
+    requestJson<ManifestFile>("/api/v1/privacy/public-metadata", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  createJob: (request: SynthesisRequest) =>
     requestJson<JobSnapshot>("/api/v1/jobs", {
       method: "POST",
       headers: { "Idempotency-Key": crypto.randomUUID() },
@@ -539,8 +672,15 @@ export const api = {
       method: "POST",
       headers: { "Idempotency-Key": crypto.randomUUID() },
     }),
+  listJobs: (datasetId?: string, limit = 20) => {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (datasetId) params.set("dataset_id", datasetId);
+    return requestJson<JobList>(`/api/v1/jobs?${params}`);
+  },
   getPrimaryReport: (jobId: string) =>
     requestJson<PrimaryReport>(`/api/v1/jobs/${jobId}/reports/primary`),
+  getReleaseReport: (jobId: string) =>
+    requestJson<PrimaryReport>(`/api/v1/jobs/${jobId}/reports/release`),
   getArtifacts: (jobId: string) =>
     requestJson<ArtifactList>(`/api/v1/jobs/${jobId}/artifacts?scope=downloadable`),
 };

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import time
 from pathlib import Path
 from typing import Any
@@ -224,6 +225,16 @@ def _assert_success_surface(
     assert exact["actual_rows"] == output_rows
     assert exact["hard_rule_violations"] == 0
     assert report["evaluation"]["rejection"]["post_violations"] == 0
+    advanced = report["evaluation"]["advanced"]
+    assert advanced["universal_score"] is None
+    assert {"pairwise", "c2st", "downstream_utility", "empirical_privacy"} <= set(
+        advanced
+    )
+    assert advanced["empirical_privacy"]["formal_privacy_guarantee"] is False
+    narrative = " ".join(report["narrative"])
+    assert "단일 열 유사도" in narrative
+    assert "전체 표 판별(C2ST)" in narrative
+    assert "개인정보 보호 결론" in narrative
 
     listed = client.get(f"/api/v1/jobs/{job_id}/artifacts?scope=downloadable")
     assert listed.status_code == 200, listed.text
@@ -233,12 +244,18 @@ def _assert_success_surface(
         "synthetic_parquet_manifest",
         "synthetic_parquet_zip",
         "primary_report_json",
+        "primary_report_html",
     } <= kinds
     for artifact in artifacts:
         downloaded = client.get(f"/api/v1/artifacts/{artifact['artifact_id']}/download")
         assert downloaded.status_code == 200, downloaded.text
         assert len(downloaded.content) == artifact["size_bytes"]
         assert hashlib.sha256(downloaded.content).hexdigest() == artifact["sha256"]
+        if artifact["kind"] == "primary_report_html":
+            html = downloaded.content.decode("utf-8")
+            assert "<h2>결과 해석</h2>" in html
+            assert "단일 열 유사도" in html
+            assert "개인정보 보호 결론" in html
 
     events = app.state.repository.replay_events(OwnerType.JOB, job_id)
     states = [event.payload["state"] for event in events]
@@ -288,6 +305,169 @@ def test_real_argn_csv_runtime_end_to_end(tmp_path: Path) -> None:
             f"/api/v1/jobs/{created['job_id']}/artifacts?scope=downloadable"
         ).json()["artifacts"]
         assert "synthetic_csv" in {item["kind"] for item in downloadable}
+
+
+def test_real_dpmm_runtime_releases_only_public_artifacts(tmp_path: Path) -> None:
+    app = create_app(tmp_path / "dpmm-workspace", public_port=8765)
+    with TestClient(app, base_url=BASE_URL) as client:
+        _bootstrap(client)
+        dataset_id, manifest = _normalize_csv(client, app, rows=100)
+        public_payload = {
+            "version": "1.0",
+            "provenance": {
+                "provenance": "public",
+                "issuer": "Synthetic Table Studio test authority",
+                "description": "Test-only declared public domains",
+                "source_sha256": "a" * 64,
+                "user_attested_public": True,
+                "attested_by": "test-curator",
+            },
+            "epsilon_preprocess": 0,
+            "columns": [
+                {
+                    "encoding": "categories",
+                    "name": "group",
+                    "kind": "categorical",
+                    "categories": ["a", "b", "c"],
+                    "nullable": False,
+                },
+                {
+                    "encoding": "bins",
+                    "name": "amount",
+                    "kind": "integer",
+                    "bins": [0, 50, 101],
+                    "within_bin": {"kind": "uniform"},
+                    "nullable": False,
+                },
+                {
+                    "encoding": "bins",
+                    "name": "score",
+                    "kind": "float",
+                    "bins": [0, 2, 4],
+                    "within_bin": {"kind": "uniform"},
+                    "nullable": False,
+                },
+                {
+                    "encoding": "categories",
+                    "name": "flag",
+                    "kind": "boolean",
+                    "categories": [False, True],
+                    "nullable": False,
+                },
+            ],
+            "public_rules_sha256": manifest.rules_sha256,
+        }
+        public_bytes = json.dumps(
+            public_payload, sort_keys=True, separators=(",", ":")
+        ).encode()
+        public_path = app.state.workspace.root / "public" / "codebook.json"
+        public_path.parent.mkdir(parents=True, exist_ok=True)
+        public_path.write_bytes(public_bytes)
+        request = {
+            "version": "1.0",
+            "dataset_id": dataset_id,
+            "dataset_manifest_sha": manifest.canonical_sha256,
+            "schema_version": manifest.schema_version,
+            "rules_version": manifest.rules_version,
+            "mode": "differential_privacy",
+            "synthesizer": "mst",
+            "output_rows": 50,
+            "output_formats": ["parquet", "csv"],
+            "resource_profile": "m4-default",
+            "evaluation_config_version": "1.0",
+            "privacy": {
+                "adjacency": "add_remove_one_row",
+                "privacy_unit": "row",
+                "epsilon_model": "3",
+                "delta": "0.000001",
+                "epsilon_preprocess": 0,
+                "public_metadata_manifest": {
+                    "relative_path": "public/codebook.json",
+                    "sha256": hashlib.sha256(public_bytes).hexdigest(),
+                    "size_bytes": len(public_bytes),
+                },
+                "public_target_count": 50,
+                "fit_sampling_rate": "1",
+                "sampling_seed": 927,
+            },
+        }
+        assert client.portal is not None
+        client.portal.call(app.state.job_runtime.stop)
+        created = _create_job(client, request, "real-dpmm-system")
+        assert created["state"] == "admitted"
+        client.portal.call(app.state.job_runtime.start)
+        finished = _wait_for(
+            client, created["job_id"], {"succeeded", "failed"}, timeout=180
+        )
+        assert finished["state"] == "succeeded", json.dumps(
+            [
+                event.payload
+                for event in app.state.repository.replay_events(
+                    OwnerType.JOB, created["job_id"]
+                )
+            ]
+        )
+        downloadable = client.get(
+            f"/api/v1/jobs/{created['job_id']}/artifacts?scope=downloadable"
+        ).json()["artifacts"]
+        by_kind = {item["kind"]: item for item in downloadable}
+        assert {
+            "synthetic_parquet_zip",
+            "synthetic_csv",
+            "primary_report_json",
+            "primary_report_html",
+            "dp_release_report_json",
+            "dp_release_report_html",
+        } <= set(by_kind)
+        for kind in ("primary_report_json", "primary_report_html"):
+            assert by_kind[kind]["downloadable"] is True
+            assert by_kind[kind]["release_safe"] is False
+            assert by_kind[kind]["contains_private_source_information"] is True
+        release_artifacts = client.get(
+            f"/api/v1/jobs/{created['job_id']}/artifacts?scope=dp_release"
+        ).json()["artifacts"]
+        assert release_artifacts
+        assert all(item["release_safe"] for item in release_artifacts)
+        assert all(
+            not item["contains_private_source_information"]
+            for item in release_artifacts
+        )
+        assert "primary_report_json" not in {item["kind"] for item in release_artifacts}
+        primary = client.get(f"/api/v1/jobs/{created['job_id']}/reports/primary")
+        assert primary.status_code == 200, primary.text
+        primary_payload = primary.json()
+        assert primary_payload["report_kind"] == "dp_curator"
+        assert primary_payload["release_safe"] is False
+        assert primary_payload["evaluation"]["primary"]["columns"]
+        advanced = primary_payload["evaluation"]["advanced"]
+        assert {"pairwise", "c2st", "downstream_utility", "empirical_privacy"} <= set(
+            advanced
+        )
+        assert advanced["empirical_privacy"]["gower"]["applicable"] is True
+        primary_narrative = " ".join(primary_payload["narrative"])
+        assert "단일 열 유사도" in primary_narrative
+        assert "전체 표 판별(C2ST)" in primary_narrative
+        assert "Gower 최근접거리" in primary_narrative
+        assert "차등프라이버시가 적용되었습니다" in primary_narrative
+        primary_html = client.get(
+            f"/api/v1/artifacts/{by_kind['primary_report_html']['artifact_id']}/download"
+        )
+        assert primary_html.status_code == 200
+        assert "담당자용 DP 품질·프라이버시 종합 보고서" in primary_html.text
+        assert "결과 해석" in primary_html.text
+        report_json = client.get(
+            f"/api/v1/artifacts/{by_kind['dp_release_report_json']['artifact_id']}/download"
+        )
+        assert report_json.status_code == 200
+        narrative = " ".join(report_json.json()["narrative"])
+        assert "형식적 개인정보 보호" in narrative
+        assert "유사도 분석" in narrative
+        report_html = client.get(
+            f"/api/v1/artifacts/{by_kind['dp_release_report_html']['artifact_id']}/download"
+        )
+        assert report_html.status_code == 200
+        assert "<h2>결과 해석</h2>" in report_html.text
+        assert "차등프라이버시 공개 보고서" in report_html.text
 
 
 def test_injected_chunk_runtime_cancellation_resume_and_scale_loop(

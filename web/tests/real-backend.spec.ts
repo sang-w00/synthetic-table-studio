@@ -114,7 +114,13 @@ async function openBootstrappedStudio(page: Page): Promise<void> {
 
   const bootstrap = await bootstrapResponse;
   expect(bootstrap.status(), "GET /api/v1/bootstrap must establish the host-only session").toBe(200);
-  await expect(page.getByRole("status")).toContainText("준비되었습니다");
+  const status = page.getByRole("status");
+  await expect(status).not.toContainText("준비 중입니다.");
+  const uploadStep = page.getByRole("button", { name: "업로드 파일 검사" });
+  await expect(uploadStep).toBeEnabled();
+  if ((await uploadStep.getAttribute("aria-current")) !== "step") {
+    await uploadStep.click();
+  }
 
   const cookies = await page.context().cookies();
   expect(
@@ -652,6 +658,12 @@ test("@desktop real CSV lifecycle reaches a utility report, cancel/resume, and l
   expect(new Set(identifiers).size).toBe(2_000);
   expect(downloadedCsv).not.toContain("_RARE_");
   await expectNoHorizontalOverflow(page, "1280×800");
+
+  await page.reload();
+  await expect(page.getByRole("region", { name: "품질 보고서와 산출물" })).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(page.getByRole("heading", { name: "다운로드" })).toBeVisible();
 });
 
 test("@compact generated XLSX takes the real sheet branch with keyboard and labelled state", async ({

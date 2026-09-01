@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import json
+import platform
+import shutil
+import subprocess
 from collections.abc import Iterable
 from decimal import ROUND_CEILING, Decimal, InvalidOperation
 from enum import StrEnum
+from functools import lru_cache
 from itertools import combinations
+from pathlib import Path
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -11,6 +17,187 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 CAPACITY_ESTIMATOR_VERSION = 1
 MIB = 1024**2
 GIB = 1024**3
+
+
+class HostResourceSnapshot(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    platform_system: str = Field(min_length=1)
+    platform_machine: str = Field(min_length=1)
+    logical_cpu_count: Annotated[int, Field(gt=0)]
+    total_memory_bytes: Annotated[int, Field(gt=0)]
+    available_memory_bytes: Annotated[int, Field(gt=0)]
+    disk_total_bytes: Annotated[int, Field(gt=0)]
+    disk_free_bytes: Annotated[int, Field(ge=0)]
+    gpu_backend: Literal["none", "mps", "cuda"] = "none"
+    gpu_device_count: Annotated[int, Field(ge=0)] = 0
+    gpu_name: str | None = None
+    gpu_memory_total_bytes: Annotated[int, Field(gt=0)] | None = None
+
+
+class WorkerBackendSnapshot(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    mps_available: bool = False
+    cuda_device_count: Annotated[int, Field(ge=0)] = 0
+
+
+@lru_cache(maxsize=4)
+def detect_worker_backends(interpreter: str | Path) -> WorkerBackendSnapshot:
+    executable = Path(interpreter)
+    if not executable.is_file():
+        return WorkerBackendSnapshot()
+    script = (
+        "import json,torch;"
+        "print(json.dumps({'mps_available':bool(torch.backends.mps.is_built() "
+        "and torch.backends.mps.is_available()),"
+        "'cuda_device_count':int(torch.cuda.device_count()) "
+        "if torch.cuda.is_available() else 0}))"
+    )
+    try:
+        completed = subprocess.run(
+            [str(executable), "-c", script],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        payload = json.loads(completed.stdout)
+        if not isinstance(payload, dict):
+            return WorkerBackendSnapshot()
+        return WorkerBackendSnapshot.model_validate(payload)
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return WorkerBackendSnapshot()
+
+
+class RuntimeResourcePlan(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    resource_profile: str = Field(min_length=1)
+    recommended_device: str = Field(min_length=1)
+    worker_lease_bytes: Annotated[int, Field(gt=0)]
+    utility_max_rows: Annotated[int, Field(gt=0)]
+    duckdb_memory_limit_bytes: Annotated[int, Field(gt=0)]
+    max_concurrent_jobs: Annotated[int, Field(gt=0)]
+    disk_free_bytes: Annotated[int, Field(ge=0)]
+
+
+def _nvidia_resources() -> tuple[int, str | None, int | None]:
+    executable = shutil.which("nvidia-smi")
+    if executable is None:
+        return 0, None, None
+    try:
+        completed = subprocess.run(
+            [
+                executable,
+                "--query-gpu=name,memory.total",
+                "--format=csv,noheader,nounits",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return 0, None, None
+    devices: list[tuple[str, int]] = []
+    for line in completed.stdout.splitlines():
+        name, separator, memory = line.rpartition(",")
+        if not separator:
+            continue
+        try:
+            memory_bytes = int(memory.strip()) * MIB
+        except ValueError:
+            continue
+        if name.strip() and memory_bytes > 0:
+            devices.append((name.strip(), memory_bytes))
+    if not devices:
+        return 0, None, None
+    names = sorted({name for name, _ in devices})
+    return len(devices), ", ".join(names), sum(memory for _, memory in devices)
+
+
+def detect_host_resources(workspace: str | Path) -> HostResourceSnapshot:
+    import psutil
+
+    system = platform.system() or "unknown"
+    machine = platform.machine() or "unknown"
+    memory = psutil.virtual_memory()
+    disk = shutil.disk_usage(Path(workspace))
+    cpu_count = psutil.cpu_count(logical=True) or 1
+
+    gpu_backend: Literal["none", "mps", "cuda"] = "none"
+    gpu_count = 0
+    gpu_name: str | None = None
+    gpu_memory: int | None = None
+    cuda_count, cuda_name, cuda_memory = _nvidia_resources()
+    if cuda_count:
+        gpu_backend = "cuda"
+        gpu_count = cuda_count
+        gpu_name = cuda_name
+        gpu_memory = cuda_memory
+    elif system == "Darwin" and machine in {"arm64", "aarch64"}:
+        gpu_backend = "mps"
+        gpu_count = 1
+        gpu_name = "Apple Silicon GPU"
+
+    return HostResourceSnapshot(
+        platform_system=system,
+        platform_machine=machine,
+        logical_cpu_count=cpu_count,
+        total_memory_bytes=int(memory.total),
+        available_memory_bytes=max(1, int(memory.available)),
+        disk_total_bytes=disk.total,
+        disk_free_bytes=disk.free,
+        gpu_backend=gpu_backend,
+        gpu_device_count=gpu_count,
+        gpu_name=gpu_name,
+        gpu_memory_total_bytes=gpu_memory,
+    )
+
+
+def derive_runtime_resource_plan(
+    snapshot: HostResourceSnapshot,
+    *,
+    mps_validated: bool = False,
+    cuda_validated_device_count: int = 0,
+) -> RuntimeResourcePlan:
+    reserve = max(2 * GIB, snapshot.total_memory_bytes // 12)
+    available_for_jobs = max(GIB, snapshot.available_memory_bytes - reserve)
+    worker_lease = min(24 * GIB, available_for_jobs)
+    if worker_lease >= 16 * GIB:
+        utility_max_rows = 250_000
+    elif worker_lease >= 8 * GIB:
+        utility_max_rows = 100_000
+    else:
+        utility_max_rows = 50_000
+    duckdb_memory = max(
+        512 * MIB,
+        min(8 * GIB, snapshot.available_memory_bytes // 8),
+    )
+    concurrency_by_memory = max(1, available_for_jobs // worker_lease)
+    concurrency_by_cpu = max(1, snapshot.logical_cpu_count // 4)
+    max_concurrent = min(4, concurrency_by_memory, concurrency_by_cpu)
+
+    recommended_device = "cpu"
+    if snapshot.gpu_backend == "mps" and mps_validated:
+        recommended_device = "mps"
+    elif (
+        snapshot.gpu_backend == "cuda"
+        and cuda_validated_device_count > 0
+        and snapshot.gpu_device_count > 0
+    ):
+        recommended_device = "cuda:0"
+
+    return RuntimeResourcePlan(
+        resource_profile=f"auto_{recommended_device.split(':', 1)[0]}",
+        recommended_device=recommended_device,
+        worker_lease_bytes=worker_lease,
+        utility_max_rows=utility_max_rows,
+        duckdb_memory_limit_bytes=duckdb_memory,
+        max_concurrent_jobs=max_concurrent,
+        disk_free_bytes=snapshot.disk_free_bytes,
+    )
 
 
 class ResourceErrorCode(StrEnum):

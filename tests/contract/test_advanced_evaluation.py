@@ -215,6 +215,27 @@ def test_dp_release_configuration_omits_empirical_privacy() -> None:
     assert result["universal_score"] is None
 
 
+def test_dp_internal_configuration_includes_empirical_privacy_diagnostics() -> None:
+    real, holdout, synthetic = _c2st_fixture()
+    result = evaluate_advanced(
+        real,
+        holdout,
+        synthetic,
+        {"number": "float", "category": "categorical", "ignored_text": "text"},
+        seed=3,
+        mode="differential_privacy",
+        report_scope="internal",
+        secret_groups=[["number"]],
+        auxiliary_groups=[["category"]],
+        sections=["empirical_privacy"],
+    )
+    empirical = result["empirical_privacy"]
+    assert empirical["release_safe"] is False
+    assert empirical["formal_privacy_guarantee"] is False
+    assert empirical["gower"]["applicable"] is True
+    assert empirical["anonymeter"]["automatic_secret_selection"] is False
+
+
 def test_pairwise_worker_operation_publishes_internal_non_release_artifact(
     tmp_path: Path,
 ) -> None:

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Header, Request, Response, status
+from fastapi import APIRouter, Header, Query, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from sts.domain import (
@@ -51,9 +51,12 @@ class ParseOptionsRequest(BaseModel):
 
     encoding: Literal["utf-8", "utf-8-sig", "cp949", "euc-kr"]
     delimiter: str = Field(min_length=1, max_length=1)
-    quotechar: str | None = Field(default='"', min_length=1, max_length=1)
-    escapechar: str | None = Field(default=None, min_length=1, max_length=1)
-    has_header: bool = True
+    # Ingest hardcodes RFC 4180 quoting and always consumes a header row. Accepting any
+    # other value here and ignoring it silently dropped the first data row of a
+    # headerless file, so the unsupported values are rejected at the boundary instead.
+    quotechar: Literal['"'] = '"'
+    escapechar: None = None
+    has_header: Literal[True] = True
     malformed: Literal["fail", "skip"] = "fail"
 
 
@@ -281,6 +284,14 @@ class DatasetService:
         except DomainError as exc:
             self._fail(dataset_id, exc)
             raise
+        except Exception as exc:
+            failure = DomainError(
+                ErrorCode.WORKER_FAILED,
+                "dataset processing failed unexpectedly",
+                context={"error": type(exc).__name__},
+            )
+            self._fail(dataset_id, failure)
+            raise failure from exc
         return {"dataset_id": str(dataset_id), "state": inspected.state.value}
 
     def _inspect(self, dataset_id: UUID | str) -> Any:
@@ -551,6 +562,14 @@ class DatasetService:
         except DomainError as exc:
             self._fail(dataset_id, exc)
             raise
+        except Exception as exc:
+            failure = DomainError(
+                ErrorCode.WORKER_FAILED,
+                "dataset processing failed unexpectedly",
+                context={"error": type(exc).__name__},
+            )
+            self._fail(dataset_id, failure)
+            raise failure from exc
         return {"dataset_id": str(dataset_id), "state": record.state.value}
 
     def _run_profile(self, dataset_id: UUID | str) -> Any:
@@ -705,6 +724,14 @@ class DatasetService:
         except DomainError as exc:
             self._fail(dataset_id, exc)
             raise
+        except Exception as exc:
+            failure = DomainError(
+                ErrorCode.WORKER_FAILED,
+                "dataset processing failed unexpectedly",
+                context={"error": type(exc).__name__},
+            )
+            self._fail(dataset_id, failure)
+            raise failure from exc
         return {"dataset_id": str(dataset_id), "state": record.state.value}
 
     def _run_normalize(self, dataset_id: UUID | str) -> Any:
@@ -800,6 +827,51 @@ class DatasetService:
             code=error.code.value,
         )
 
+    def list_recent(self, *, limit: int = 20) -> dict[str, Any]:
+        datasets: list[dict[str, Any]] = []
+        for record in self.repository.list_datasets(limit=limit):
+            snapshot = self.get_dataset(record.dataset_id)
+            snapshot.update(
+                {
+                    "created_at": record.created_at,
+                    "updated_at": record.updated_at,
+                }
+            )
+            datasets.append(snapshot)
+        return {"version": "1.0", "datasets": datasets}
+
+    def get_schema(self, dataset_id: UUID | str) -> dict[str, Any]:
+        manifest = self.repository.get_dataset_manifest(dataset_id)
+        if not manifest.columns:
+            raise DomainError(ErrorCode.INVALID_STATE, "dataset schema is not available")
+        return {
+            "version": "1.0",
+            "dataset_id": str(manifest.dataset_id),
+            "schema_version": manifest.schema_version,
+            "columns": [
+                column.model_dump(mode="json", exclude_none=True) for column in manifest.columns
+            ],
+        }
+
+    def get_rules(self, dataset_id: UUID | str) -> dict[str, Any]:
+        manifest = self.repository.get_dataset_manifest(dataset_id)
+        relative = manifest.metadata.get("rules_relative_path")
+        if not isinstance(relative, str):
+            return {
+                "version": "1.0",
+                "dataset_id": str(manifest.dataset_id),
+                "rules_version": manifest.rules_version,
+                "rules": [],
+            }
+        path = self.workspace.resolve_relative(relative, require_exists=True)
+        payload = json.loads(path.read_bytes())
+        return {
+            "version": "1.0",
+            "dataset_id": str(manifest.dataset_id),
+            "rules_version": manifest.rules_version,
+            "rules": payload["rules"],
+        }
+
     def get_dataset(self, dataset_id: UUID | str) -> dict[str, Any]:
         record = self.repository.get_dataset(dataset_id)
         actions = {
@@ -813,6 +885,13 @@ class DatasetService:
         }.get(record.state, [])
         events = self.repository.replay_events(OwnerType.DATASET, dataset_id)
         latest = events[-1] if events else None
+        manifest = self.repository.get_dataset_manifest(dataset_id)
+        control = self._control(dataset_id)
+        upload_offset = (
+            int(self.uploads.head_offset(dataset_id))
+            if record.state is DatasetState.UPLOADING
+            else manifest.source.size_bytes
+        )
         return {
             "dataset_id": str(record.dataset_id),
             "state": record.state.value,
@@ -820,11 +899,19 @@ class DatasetService:
             "manifest_sha256": record.manifest_sha256,
             "progress": latest.payload if latest else None,
             "legal_actions": actions,
+            "filename": str(control["filename"]),
+            "size_bytes": int(control["declared_size_bytes"]),
+            "source_format": str(control["source_format"]),
+            "upload_offset": upload_offset,
         }
 
 
 def create_dataset_router(service: DatasetService) -> APIRouter:
     router = APIRouter(prefix="/api/v1/datasets", tags=["datasets"])
+
+    @router.get("")
+    def list_datasets(limit: int = Query(default=20, ge=1, le=100)) -> dict[str, Any]:
+        return service.list_recent(limit=limit)
 
     @router.post("/uploads", status_code=status.HTTP_201_CREATED)
     def create_upload(body: UploadCreateRequest) -> dict[str, Any]:
@@ -854,6 +941,14 @@ def create_dataset_router(service: DatasetService) -> APIRouter:
     @router.get("/{dataset_id}")
     def get_dataset(dataset_id: UUID) -> dict[str, Any]:
         return service.get_dataset(dataset_id)
+
+    @router.get("/{dataset_id}/schema")
+    def get_schema(dataset_id: UUID) -> dict[str, Any]:
+        return service.get_schema(dataset_id)
+
+    @router.get("/{dataset_id}/rules")
+    def get_rules(dataset_id: UUID) -> dict[str, Any]:
+        return service.get_rules(dataset_id)
 
     @router.get("/{dataset_id}/parse-options")
     def get_parse_options(dataset_id: UUID) -> dict[str, Any]:

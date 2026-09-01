@@ -7,7 +7,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from .adapter import AdapterError, CancellationRequested, fit_checkpoint, generate_candidate
+from .adapter import (
+    AdapterError,
+    CancellationRequested,
+    fit_checkpoint,
+    generate_candidate,
+)
 from .protocol import (
     PROTOCOL_VERSION,
     WorkerEvent,
@@ -25,7 +30,9 @@ class EventEmitter:
         self.writer = WorkerEventWriter(path)
         self.sequence = 0
 
-    def emit(self, stage: str, metrics: dict[str, Any], *, message_code: str | None = None) -> None:
+    def emit(
+        self, stage: str, metrics: dict[str, Any], *, message_code: str | None = None
+    ) -> None:
         self.sequence += 1
         self.writer.append(
             WorkerEvent(
@@ -72,7 +79,9 @@ def run_worker(request_path: Path, events_path: Path, result_path: Path) -> int:
     token = CancellationToken(cancellation_path)
     try:
         if request.worker_kind != "argn":
-            raise AdapterError("WORKER_REQUEST_INVALID", "request worker_kind must be argn")
+            raise AdapterError(
+                "WORKER_REQUEST_INVALID", "request worker_kind must be argn"
+            )
         token.check("resolve_manifest")
         resolved_files = resolve_manifest_snapshot(request.manifest_snapshot)
         token.check("dispatch")
@@ -94,9 +103,12 @@ def run_worker(request_path: Path, events_path: Path, result_path: Path) -> int:
             )
         else:
             raise AdapterError(
-                "OPERATION_UNSUPPORTED", f"unsupported argn worker operation: {request.operation}"
+                "OPERATION_UNSUPPORTED",
+                f"unsupported argn worker operation: {request.operation}",
             )
-        emitter.emit("completed", {"artifacts": len(artifacts)}, message_code="ARGN_COMPLETED")
+        emitter.emit(
+            "completed", {"artifacts": len(artifacts)}, message_code="ARGN_COMPLETED"
+        )
         write_result_atomic(
             result_path,
             WorkerResultEnvelope(
@@ -117,7 +129,11 @@ def run_worker(request_path: Path, events_path: Path, result_path: Path) -> int:
         write_result_atomic(result_path, _error_result("failure", error))
         return 2
     except ValueError as error:
-        code = "CHECKSUM_MISMATCH" if "mismatch" in str(error).lower() else "WORKER_REQUEST_INVALID"
+        code = (
+            "CHECKSUM_MISMATCH"
+            if "mismatch" in str(error).lower()
+            else "WORKER_REQUEST_INVALID"
+        )
         adapted = AdapterError(code, str(error))
         emitter.emit("failed", {"error_code": adapted.code}, message_code=adapted.code)
         write_result_atomic(result_path, _error_result("failure", adapted))
@@ -148,7 +164,9 @@ def _assert_supplied_path(root: Path, supplied: Path, *, existing: bool) -> Path
     absolute = supplied.absolute()
     candidate = absolute.resolve(strict=True) if existing else absolute
     parent = candidate.parent.resolve(strict=True)
-    if not parent.is_relative_to(root) or (existing and not candidate.is_relative_to(root)):
+    if not parent.is_relative_to(root) or (
+        existing and not candidate.is_relative_to(root)
+    ):
         raise ValueError(f"worker protocol path escapes workspace: {supplied}")
     if not existing and candidate.is_symlink():
         raise ValueError(f"worker protocol path must not be a symlink: {supplied}")

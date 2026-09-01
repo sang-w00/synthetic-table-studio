@@ -28,7 +28,14 @@ def _build_app(tmp_path: Path, *, static_dir: Path | None = None):
 def _bootstrap(client: TestClient) -> str:
     response = client.get("/api/v1/bootstrap")
     assert response.status_code == 200
-    assert response.json() == {"status": "ready"}
+    payload = response.json()
+    assert payload["status"] == "ready"
+    assert payload["host_resources"]["logical_cpu_count"] > 0
+    assert payload["host_resources"]["total_memory_bytes"] > 0
+    assert payload["host_resources"]["disk_free_bytes"] >= 0
+    assert payload["resource_plan"]["worker_lease_bytes"] > 0
+    assert payload["resource_plan"]["utility_max_rows"] > 0
+    assert payload["resource_plan"]["recommended_device"] in {"cpu", "mps", "cuda:0"}
     return client.cookies[SESSION_COOKIE_NAME]
 
 

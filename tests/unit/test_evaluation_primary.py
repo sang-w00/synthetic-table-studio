@@ -112,8 +112,10 @@ def test_primary_golden_distances_missingness_constants_and_aggregate() -> None:
     by_name = {column.name: column for column in result.columns}
 
     assert by_name["number"].baseline_distance.value == pytest.approx(0.25)
-    assert by_name["number"].synthetic_distance.value == pytest.approx(1.0)
-    assert by_name["number"].baseline_excess.value == pytest.approx(0.75)
+    # The synthetic side holds a single value while the holdout holds four, so the real
+    # KS distance is 0.75. A one-sided constant must not be reported as the maximum 1.0.
+    assert by_name["number"].synthetic_distance.value == pytest.approx(0.75)
+    assert by_name["number"].baseline_excess.value == pytest.approx(0.5)
     assert by_name["number"].baseline_missingness_difference.value == pytest.approx(
         0.25
     )
@@ -135,8 +137,8 @@ def test_primary_golden_distances_missingness_constants_and_aggregate() -> None:
         "constant_same",
         "constant_different",
     )
-    assert result.baseline_excess.median.value == pytest.approx(0.5)
-    assert result.baseline_excess.p95.value == pytest.approx(0.9625)
+    assert result.baseline_excess.median.value == pytest.approx(0.375)
+    assert result.baseline_excess.p95.value == pytest.approx(0.925)
     assert result.baseline_excess.maximum.value == 1
     assert result.universal_score is None
 

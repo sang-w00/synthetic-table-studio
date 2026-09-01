@@ -8,6 +8,7 @@ from uuid import UUID
 
 from fastapi import Request
 from fastapi.responses import StreamingResponse
+from starlette.concurrency import run_in_threadpool
 
 from sts.domain import DomainError, ErrorCode
 from sts.storage import CatalogRepository
@@ -65,7 +66,8 @@ async def dataset_event_stream(
     cutoff = datetime.now(UTC) - timedelta(days=retention_days)
     heartbeat_at = asyncio.get_running_loop().time() + heartbeat_seconds
     while True:
-        events = repository.replay_events(
+        events = await run_in_threadpool(
+            repository.replay_events,
             OwnerType.DATASET,
             dataset_id,
             after_event_id=cursor,

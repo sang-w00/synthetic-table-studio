@@ -39,6 +39,7 @@ from sts.reports import (
     ArtifactSafety,
     assert_dp_release_safe,
     build_curator_internal_report,
+    build_dp_curator_report,
     build_dp_release_report,
     build_utility_primary_report,
     publish_report_artifacts,
@@ -215,7 +216,7 @@ def test_reports_escape_injection_are_self_contained_and_preserve_privacy_bounda
     html = utility.html_bytes().decode()
     assert injection not in html
     assert "&lt;img src=&#34;https://attacker.invalid/pixel&#34;" in html
-    assert "No formal privacy guarantee" in html
+    assert "수학적으로 계산된 개인정보 보호 보장이 없습니다" in html
     assert "<style>" in html and "<svg" in html
     assert utility.document["narrative"]
     assert "1,000" in utility.document["narrative"][0]
@@ -239,7 +240,11 @@ def test_utility_report_projects_runtime_evaluation_into_readable_metrics() -> N
     report = build_utility_primary_report(
         job_id=uuid4(),
         evaluation={
-            "exact": {"requested_rows": 2_000, "actual_rows": 2_000},
+            "exact": {
+                "requested_rows": 2_000,
+                "actual_rows": 2_000,
+                "hard_rule_violations": 0,
+            },
             "primary": {
                 "baseline_excess": {
                     "median": {"value": 0.01},
@@ -259,6 +264,47 @@ def test_utility_report_projects_runtime_evaluation_into_readable_metrics() -> N
                         "synthetic_missingness_difference": {"value": 0.0},
                     },
                 ],
+            },
+            "advanced": {
+                "pairwise": {
+                    "pairs_considered": 1,
+                    "pairs": [
+                        {
+                            "family": "mixed",
+                            "synthetic_difference": {"conditional_tvd": 0.08},
+                        }
+                    ],
+                },
+                "c2st": {
+                    "synthetic_vs_untouched_holdout": {
+                        "linear": {"auroc": 0.61},
+                        "nonlinear": {"auroc": 0.64},
+                    },
+                    "real_train_eval_vs_untouched_holdout_control": {
+                        "linear": {"auroc": 0.52},
+                        "nonlinear": {"auroc": 0.53},
+                    },
+                },
+                "downstream_utility": {
+                    "applicable": True,
+                    "target": "outcome",
+                    "metric": "accuracy",
+                    "trtr": 0.82,
+                    "tstr": 0.78,
+                    "difference_tstr_minus_trtr": -0.04,
+                },
+                "empirical_privacy": {
+                    "gower": {
+                        "applicable": True,
+                        "dcr": {"synthetic_median_minus_control": -0.02},
+                    },
+                    "anonymeter": {
+                        "applicable": True,
+                        "results_by_seed": [
+                            {"singling_out": {"excess_risk": {"value": 0.07}}}
+                        ],
+                    },
+                },
             },
         },
     )
@@ -280,6 +326,117 @@ def test_utility_report_projects_runtime_evaluation_into_readable_metrics() -> N
         }
     ]
     assert "2,000" in report.document["narrative"][0]
+    narrative = " ".join(report.document["narrative"])
+    assert "단일 열 유사도" in narrative
+    assert "열 관계 보존" in narrative and "0.0800" in narrative
+    assert "전체 표 판별(C2ST)" in narrative and "0.6100" in narrative
+    assert "분석 활용성" in narrative and "TRTR" in narrative and "TSTR" in narrative
+    assert "Gower 최근접거리" in narrative and "-0.0200" in narrative
+    assert "Anonymeter 공격 진단" in narrative and "0.0700" in narrative
+    assert "형식적 차등프라이버시를 적용하지 않았습니다" in narrative
+    html = report.html_bytes().decode()
+    assert '<section class="analysis"><h2>결과 해석</h2>' in html
+    assert html.index("결과 해석") < html.index("세부 측정값 및 재현 정보")
+
+
+def test_report_leads_with_plain_language_quality_and_privacy_conclusions() -> None:
+    report = build_utility_primary_report(
+        job_id=uuid4(),
+        evaluation={
+            "exact": {
+                "requested_rows": 2_000,
+                "actual_rows": 2_000,
+                "hard_rule_violations": 0,
+            },
+            "primary": {
+                "baseline_excess": {
+                    "median": {"value": 0.01},
+                    "p95": {"value": 0.02},
+                    "maximum": {"value": 0.03},
+                },
+                "columns": [
+                    {
+                        "name": "연령",
+                        "included_in_fidelity_aggregate": True,
+                        "synthetic_distance": {"metric": "ks_distance", "value": 0.04},
+                        "baseline_excess": {"value": 0.01},
+                        "synthetic_missingness_difference": {"value": 0.0},
+                    }
+                ],
+            },
+            "advanced": {
+                "empirical_privacy": {
+                    "gower": {
+                        "applicable": True,
+                        "dcr": {"synthetic_median_minus_control": -0.02},
+                    },
+                    "anonymeter": {
+                        "applicable": False,
+                        "reason": "explicit_secret_and_auxiliary_groups_required",
+                    },
+                }
+            },
+        },
+    )
+
+    summary = report.document["executive_summary"]
+    assert set(summary) == {
+        "overall_conclusion",
+        "quality",
+        "privacy",
+        "limitations",
+    }
+    assert "2,000행" in summary["overall_conclusion"]
+    assert "강제 규칙 위반 없이" in summary["overall_conclusion"]
+    assert summary["quality"]["heading"] == "재현 품질"
+    assert "0.0100" in " ".join(summary["quality"]["paragraphs"])
+    assert "연령" in " ".join(summary["quality"]["paragraphs"])
+    assert summary["privacy"]["heading"] == "프라이버시 보호"
+    privacy_text = " ".join(summary["privacy"]["paragraphs"])
+    assert "형식적 차등프라이버시 보장은 없습니다" in privacy_text
+    assert "-0.0200" in privacy_text
+    assert "안전하다는 뜻은 아닙니다" in privacy_text
+    assert any("보편적인 합격 기준" in item for item in summary["limitations"])
+
+    html = report.html_bytes().decode("utf-8")
+    assert "<h2>한눈에 보는 결론</h2>" in html
+    assert "<h3>재현 품질</h3>" in html
+    assert "<h3>프라이버시 보호</h3>" in html
+    assert "연령" in html
+    assert html.index("한눈에 보는 결론") < html.index("세부 측정값 및 재현 정보")
+    assert '<details class="technical-details">' in html
+    assert "기술 검증 데이터 보기" in html
+    assert "<details open" not in html
+
+
+def test_dp_release_plain_language_summary_explains_formal_guarantee_without_percentage() -> (
+    None
+):
+    report = build_dp_release_report(
+        job_id=uuid4(),
+        ledger_projection={
+            "mechanism": "MST",
+            "epsilon_model": "3",
+            "delta": "0.000001",
+            "privacy_unit": "row",
+            "adjacency": "add_remove_one_row",
+            "release_count": 2,
+        },
+        output_summary={
+            "requested_rows": 1_000,
+            "actual_rows": 1_000,
+            "hard_rule_violations": 0,
+        },
+    )
+
+    summary = report.document["executive_summary"]
+    privacy_text = " ".join(summary["privacy"]["paragraphs"])
+    assert "MST" in privacy_text
+    assert "ε=3" in privacy_text
+    assert "δ=0.000001" in privacy_text
+    assert "안전한 사람의 비율" in privacy_text
+    assert "누적 공개 횟수는 2회" in privacy_text
+    assert "원본 기반 유사도와 공격 진단은 포함하지 않았습니다" in privacy_text
 
 
 def test_dp_release_uses_positive_allowlists_and_recursively_excludes_private_fields() -> (
@@ -355,6 +512,13 @@ def test_dp_release_uses_positive_allowlists_and_recursively_excludes_private_fi
     assert payload["release_safe"] is True
     assert payload["contains_private_source_information"] is False
     assert release.safety.release_safe is True
+    narrative = " ".join(payload["narrative"])
+    assert "ε=3" in narrative and "δ=0.000001" in narrative
+    assert "보호 단위는 row" in narrative
+    assert "인접성 정의는 add_remove_one_row" in narrative
+    assert "원본·holdout에서 계산한 KS, TVD" in narrative
+    assert "공개 결과의 강제 규칙 위반은 0건" in narrative
+    assert "결과 해석" in release.html_bytes().decode()
 
 
 def test_report_and_export_artifacts_use_explicit_catalog_safety_scopes(
@@ -368,6 +532,31 @@ def test_report_and_export_artifacts_use_explicit_catalog_safety_scopes(
         internal = build_curator_internal_report(
             job_id=job.job_id, diagnostics={"source_count": 4}
         )
+        dp_curator = build_dp_curator_report(
+            job_id=job.job_id,
+            evaluation={
+                "summary": {
+                    "requested_rows": 4,
+                    "actual_rows": 4,
+                    "median_excess": 0.01,
+                    "p95_excess": 0.02,
+                    "max_excess": 0.03,
+                },
+                "columns": [
+                    {
+                        "name": "count",
+                        "baseline_excess": 0.01,
+                    }
+                ],
+            },
+            ledger_projection={
+                "mechanism": "MST",
+                "epsilon_model": "3",
+                "delta": "0.000001",
+                "privacy_unit": "row",
+                "adjacency": "add_remove_one_row",
+            },
+        )
         release = build_dp_release_report(
             job_id=job.job_id,
             ledger_projection={"epsilon_model": "3", "delta": "0.000001"},
@@ -377,6 +566,9 @@ def test_report_and_export_artifacts_use_explicit_catalog_safety_scopes(
             repository, utility, job_id=job.job_id, attempt=1
         )
         publish_report_artifacts(repository, internal, job_id=job.job_id, attempt=1)
+        curator_manifests = publish_report_artifacts(
+            repository, dp_curator, job_id=job.job_id, attempt=1
+        )
         release_manifests = publish_report_artifacts(
             repository, release, job_id=job.job_id, attempt=1
         )
@@ -392,16 +584,22 @@ def test_report_and_export_artifacts_use_explicit_catalog_safety_scopes(
         )
         assert {item.artifact_id for item in downloadable} == {
             *(item.artifact_id for item in utility_manifests),
+            *(item.artifact_id for item in curator_manifests),
             *(item.artifact_id for item in release_manifests),
         }
         assert {item.artifact_id for item in dp_release} == {
             item.artifact_id for item in release_manifests
         }
-        assert len(internal_scope) == 6
+        assert len(internal_scope) == 8
         for manifest in release_manifests:
             assert manifest.release_safe is True
             assert manifest.contains_private_source_information is False
             assert layout.resolve_relative(manifest.relative_path).is_file()
+        for manifest in curator_manifests:
+            assert manifest.downloadable is True
+            assert manifest.release_safe is False
+            assert manifest.contains_private_source_information is True
+            assert manifest.artifact_id not in {item.artifact_id for item in dp_release}
     finally:
         repository.close()
 

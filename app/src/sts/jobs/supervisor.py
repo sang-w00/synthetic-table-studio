@@ -149,22 +149,29 @@ class WorkerSupervisor:
                 time.monotonic() if cancellation_path.exists() else None
             )
 
-            while process.returncode is None:
-                await asyncio.sleep(self.poll_interval_seconds)
-                rss = _process_tree_rss(process.pid)
-                peak_rss = max(peak_rss, rss)
-                if max_rss is not None and rss > max_rss and not resource_exceeded:
-                    resource_exceeded = True
-                    _create_cancellation_file(cancellation_path, "resource_limit")
-                    cancellation_seen_at = time.monotonic()
-                elif cancellation_path.exists() and cancellation_seen_at is None:
-                    cancellation_seen_at = time.monotonic()
+            try:
+                while process.returncode is None:
+                    await asyncio.sleep(self.poll_interval_seconds)
+                    rss = _process_tree_rss(process.pid)
+                    peak_rss = max(peak_rss, rss)
+                    if max_rss is not None and rss > max_rss and not resource_exceeded:
+                        resource_exceeded = True
+                        _create_cancellation_file(cancellation_path, "resource_limit")
+                        cancellation_seen_at = time.monotonic()
+                    elif cancellation_path.exists() and cancellation_seen_at is None:
+                        cancellation_seen_at = time.monotonic()
 
-                if (
-                    cancellation_seen_at is not None
-                    and time.monotonic() - cancellation_seen_at >= self.termination_grace_seconds
-                    and process.returncode is None
-                ):
+                    if (
+                        cancellation_seen_at is not None
+                        and time.monotonic() - cancellation_seen_at
+                        >= self.termination_grace_seconds
+                        and process.returncode is None
+                    ):
+                        await asyncio.to_thread(_terminate_process_tree, process.pid)
+            finally:
+                # Cancelling the supervising task must never orphan the worker: it still
+                # holds this job's memory lease and would outlive the application.
+                if process.returncode is None:
                     await asyncio.to_thread(_terminate_process_tree, process.pid)
 
             exit_code = await process.wait()

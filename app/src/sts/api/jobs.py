@@ -1,25 +1,30 @@
 from __future__ import annotations
 
 import asyncio
+import csv
 import hashlib
 import json
 import os
 import secrets
+import shutil
 from collections.abc import AsyncIterator, Mapping
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 import duckdb
 import pyarrow.parquet as pq
-from fastapi import APIRouter, Header, Request, Response, status
+from fastapi import APIRouter, Header, Query, Request, Response, status
 from fastapi.responses import JSONResponse, StreamingResponse
+from starlette.concurrency import run_in_threadpool
 
 from sts.domain import (
     JOB_RUNNING_STATES,
     JOB_TERMINAL_STATES,
     DatasetState,
+    DifferentialPrivacySynthesisRequest,
     DomainError,
     ErrorCode,
     JobState,
@@ -27,7 +32,7 @@ from sts.domain import (
     UtilitySynthesisRequest,
     canonical_sha256,
 )
-from sts.jobs.protocol import SnapshotFile, WorkerRequestEnvelope
+from sts.jobs.protocol import ManifestSnapshot, SnapshotFile, WorkerRequestEnvelope
 from sts.jobs.utility import (
     CheckpointCompatibility,
     admit_training_sample,
@@ -37,7 +42,13 @@ from sts.jobs.utility import (
     load_argn_feature_availability,
     require_argn_feature_configuration,
 )
-from sts.privacy import load_dp_availability
+from sts.privacy import (
+    DiscreteCodebook,
+    PublicFitSamplingPredicate,
+    admit_mst_domain,
+    load_dp_availability,
+    validate_public_metadata,
+)
 from sts.rules import RuleSpec, compile_rules
 from sts.rules.execution import (
     StructuralCodecs,
@@ -46,7 +57,16 @@ from sts.rules.execution import (
 )
 from sts.storage import CatalogRepository, WorkspaceLayout
 from sts.storage.atomic import sha256_file
-from sts.storage.repository import JobRecord, OwnerType
+from sts.storage.repository import JobRecord, LedgerRunState, OwnerType
+from sts.storage.resources import (
+    ArtifactComponent,
+    DiskEstimate,
+    DiskEstimationInput,
+    ResourceAdmissionError,
+    RuntimeResourcePlan,
+    admit_disk,
+    estimate_disk,
+)
 
 if TYPE_CHECKING:
     from sts.jobs.runtime import UtilityJobRuntime
@@ -142,7 +162,9 @@ async def job_event_stream(
     cutoff = datetime.now(UTC) - timedelta(days=retention_days)
     heartbeat_at = asyncio.get_running_loop().time() + heartbeat_seconds
     while True:
-        events = repository.replay_events(OwnerType.JOB, job_id, after_event_id=cursor)
+        events = await run_in_threadpool(
+            repository.replay_events, OwnerType.JOB, job_id, after_event_id=cursor
+        )
         for event in events:
             cursor = event.event_id
             timestamp = datetime.fromisoformat(event.timestamp.replace("Z", "+00:00"))
@@ -197,6 +219,7 @@ class JobService:
         worker_lease_bytes: int = DEFAULT_WORKER_LEASE_BYTES,
         utility_max_rows: int = DEFAULT_UTILITY_MAX_ROWS,
         argn_gate_required: bool = True,
+        resource_plan: RuntimeResourcePlan | None = None,
     ) -> None:
         if worker_lease_bytes <= 0 or utility_max_rows <= 0:
             raise ValueError("worker lease and utility row cap must be positive")
@@ -208,6 +231,7 @@ class JobService:
         self.worker_lease_bytes = worker_lease_bytes
         self.utility_max_rows = utility_max_rows
         self.argn_gate_required = argn_gate_required
+        self.resource_plan = resource_plan
         self.runtime: UtilityJobRuntime | None = None
 
     def attach_runtime(self, runtime: UtilityJobRuntime) -> None:
@@ -262,17 +286,12 @@ class JobService:
                     "failure_reasons": list(availability.failure_reasons),
                 },
             )
-        # A passing probe alone must never silently expose a worker route. The app-side
-        # fit/sample boundary remains disabled until its implementation is reviewed.
-        raise DomainError(
-            ErrorCode.BACKEND_INCOMPATIBLE,
-            "formal-DP app execution route is not enabled",
-            context={
-                "synthesizer": synthesizer,
-                "probe_gate": "passed",
-                "app_route": "disabled",
-            },
-        )
+        if synthesizer != "mst":
+            raise DomainError(
+                ErrorCode.BACKEND_INCOMPATIBLE,
+                "only the reviewed MST app execution route is enabled",
+                context={"synthesizer": synthesizer, "app_route": "unsupported"},
+            )
 
     def _validate_utility(self, request: UtilitySynthesisRequest) -> tuple[Any, Any, Any]:
         dataset = self.repository.get_dataset(request.dataset_id)
@@ -317,20 +336,155 @@ class JobService:
             )
         return dataset, manifest, availability
 
+    def _validate_dp(
+        self, request: DifferentialPrivacySynthesisRequest
+    ) -> tuple[Any, Any, Any, DiscreteCodebook]:
+        dataset = self.repository.get_dataset(request.dataset_id)
+        if dataset.state is not DatasetState.NORMALIZED:
+            raise DomainError(
+                ErrorCode.INVALID_STATE,
+                "formal-DP synthesis requires a normalized dataset",
+                context={"dataset_state": dataset.state.value},
+            )
+        manifest = self.repository.get_dataset_manifest(request.dataset_id)
+        mismatches = {
+            name: {"expected": expected, "actual": actual}
+            for name, expected, actual in (
+                ("dataset_manifest_sha", request.dataset_manifest_sha, dataset.manifest_sha256),
+                ("schema_version", request.schema_version, manifest.schema_version),
+                ("rules_version", request.rules_version, manifest.rules_version),
+            )
+            if expected != actual
+        }
+        if mismatches:
+            raise DomainError(
+                ErrorCode.INVALID_STATE,
+                "formal-DP request does not match the normalized dataset snapshot",
+                context={"mismatches": mismatches},
+            )
+        if manifest.normalized is None:
+            raise DomainError(ErrorCode.INVALID_STATE, "normalized dataset artifact is unavailable")
+        public_file = request.privacy.public_metadata_manifest
+        public_path = self.workspace.resolve_relative(
+            public_file.relative_path, require_exists=True
+        )
+        digest, size = sha256_file(public_path)
+        if digest != public_file.sha256 or size != public_file.size_bytes:
+            raise DomainError(
+                ErrorCode.DP_METADATA_NOT_PUBLIC,
+                "public metadata manifest snapshot does not match its declared digest",
+            )
+        try:
+            public_manifest = validate_public_metadata(json.loads(public_path.read_bytes()))
+        except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+            if isinstance(error, DomainError):
+                raise
+            raise DomainError(
+                ErrorCode.DP_METADATA_NOT_PUBLIC,
+                "public metadata manifest is invalid",
+            ) from error
+        codebook = DiscreteCodebook(public_manifest)
+        modeled = tuple(
+            column.name
+            for column in manifest.columns
+            if column.role.value == "model" and column.kind.value != "excluded"
+        )
+        if tuple(codebook.domain) != modeled:
+            raise DomainError(
+                ErrorCode.DP_METADATA_NOT_PUBLIC,
+                "public codebook columns must exactly match modeled schema columns",
+                context={"expected": list(modeled), "actual": list(codebook.domain)},
+            )
+        if request.privacy.sampling_seed is None:
+            raise DomainError(
+                ErrorCode.DP_METADATA_NOT_PUBLIC,
+                "formal-DP execution requires an explicit public sampling seed",
+            )
+        # Compiling here means a rule with non-public provenance is rejected before the
+        # ledger run is reserved, instead of after the private fit has spent epsilon.
+        self._compiled_rules(manifest, mode="differential_privacy")
+        projected_rows = max(1, int(manifest.row_count or 0))
+        projected_rss = projected_rows * max(1, len(modeled)) * 16
+        admission = admit_mst_domain(
+            codebook.domain.values(),
+            projected_worker_rss_bytes=projected_rss,
+            worker_rss_limit_bytes=self.worker_lease_bytes,
+        )
+        return manifest, public_manifest, admission, codebook
+
+    def _admit_job_disk(
+        self,
+        request: UtilitySynthesisRequest | DifferentialPrivacySynthesisRequest,
+        manifest: Any,
+    ) -> DiskEstimate | None:
+        if self.resource_plan is None or manifest.normalized is None:
+            return None
+        rows = max(1, int(manifest.row_count or 0))
+        normalized_per_row = Decimal(manifest.normalized.size_bytes) / Decimal(rows)
+        source_per_row = Decimal(manifest.source.size_bytes) / Decimal(rows)
+        if isinstance(request, UtilitySynthesisRequest):
+            training_rows = min(rows, request.training.max_rows)
+            model_workspace = max(
+                2 * 1024**3,
+                int(normalized_per_row * training_rows * 4),
+            )
+        else:
+            model_workspace = 2 * 1024**3
+        estimate = estimate_disk(
+            DiskEstimationInput(
+                source_bytes=manifest.source.size_bytes,
+                measured_raw_ratio=Decimal(1),
+                rows=rows,
+                measured_normalized_bytes_per_row=normalized_per_row,
+                output_rows=request.output_rows,
+                measured_synth_parquet_bytes_per_row=max(Decimal(1), normalized_per_row),
+                measured_csv_bytes_per_row=max(Decimal(1), source_per_row),
+                model_workspace_estimate_bytes=model_workspace,
+                duckdb_memory_limit_bytes=self.resource_plan.duckdb_memory_limit_bytes,
+                include_csv=any(item.value == "csv" for item in request.output_formats),
+                include_parquet_zip64=True,
+                existing_immutable_artifacts=frozenset(
+                    {
+                        ArtifactComponent.RAW_PARQUET,
+                        ArtifactComponent.NORMALIZED_PARQUET,
+                    }
+                ),
+            )
+        )
+        free_bytes = shutil.disk_usage(self.workspace.root).free
+        try:
+            return admit_disk(estimate, free_bytes)
+        except ResourceAdmissionError as error:
+            raise DomainError(
+                ErrorCode.RESOURCE_LIMIT,
+                "insufficient workspace disk for the requested synthesis job",
+                context={
+                    "resource_code": error.code.value,
+                    "required_bytes": error.required_bytes,
+                    "available_bytes": error.available_bytes,
+                },
+            ) from error
+
     def _plan_path(self, record: JobRecord, *, create: bool = False) -> Path:
+        request = self.repository.get_job_request(record.job_id).value
+        name = (
+            "dpmm-fit-request.json"
+            if isinstance(request, DifferentialPrivacySynthesisRequest)
+            else "argn-fit-request.json"
+        )
         return (
             self.workspace.job_attempt_dir(
                 record.job_id,
                 record.attempt,
                 create=create,
             )
-            / "argn-fit-request.json"
+            / name
         )
 
-    def _compiled_rules(self, manifest: Any) -> Any:
+    def _compiled_rules(self, manifest: Any, *, mode: str = "utility") -> Any:
         relative = manifest.metadata.get("rules_relative_path")
         if relative is None:
-            return compile_rules(manifest.columns, (), mode="utility")
+            return compile_rules(manifest.columns, (), mode=mode)
         if not isinstance(relative, str):
             raise DomainError(ErrorCode.SCHEMA_INVALID, "rules manifest path is invalid")
         path = self.workspace.resolve_relative(relative, require_exists=True)
@@ -339,20 +493,23 @@ class JobService:
             rules = tuple(RuleSpec.model_validate(value) for value in payload["rules"])
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
             raise DomainError(ErrorCode.SCHEMA_INVALID, "persisted rules are invalid") from error
-        return compile_rules(manifest.columns, rules, mode="utility")
+        return compile_rules(manifest.columns, rules, mode=mode)
 
     def prepare_runtime_plan(self, job_id: UUID | str) -> WorkerRequestEnvelope:
         record = self.repository.get_job(job_id)
         if record.state is not JobState.PREPARING:
             raise DomainError(
                 ErrorCode.INVALID_STATE,
-                "utility plan preparation requires a preparing job",
+                "runtime plan preparation requires a preparing job",
             )
         request = self.repository.get_job_request(job_id).value
-        if not isinstance(request, UtilitySynthesisRequest):
-            raise DomainError(ErrorCode.BACKEND_INCOMPATIBLE, "runtime never prepares DP jobs")
-        _, manifest, availability = self._validate_utility(request)
-        return self._build_argn_plan(record, request, manifest, availability)
+        if isinstance(request, UtilitySynthesisRequest):
+            _, manifest, availability = self._validate_utility(request)
+            return self._build_argn_plan(record, request, manifest, availability)
+        manifest, public_manifest, admission, codebook = self._validate_dp(request)
+        return self._build_dpmm_plan(
+            record, request, manifest, public_manifest, admission, codebook
+        )
 
     def load_runtime_rule_context(
         self, job_id: UUID | str
@@ -372,6 +529,154 @@ class JobService:
                 ErrorCode.WORKER_FAILED, "utility plan metadata is invalid"
             ) from error
         return compiled, StructuralCodecs(fixed_tuples=fixed), private_plan
+
+    def _build_dpmm_plan(
+        self,
+        record: JobRecord,
+        request: DifferentialPrivacySynthesisRequest,
+        manifest: Any,
+        public_manifest: Any,
+        admission: Any,
+        codebook: DiscreteCodebook,
+    ) -> WorkerRequestEnvelope:
+        plan_path = self._plan_path(record, create=True)
+        if plan_path.exists():
+            return WorkerRequestEnvelope.model_validate_json(plan_path.read_bytes())
+        attempt_dir = plan_path.parent
+        public_file = request.privacy.public_metadata_manifest
+        public_path = self.workspace.resolve_relative(
+            public_file.relative_path, require_exists=True
+        )
+        scope = self.repository.create_privacy_scope(request.dataset_manifest_sha)
+        public_key = hashlib.sha256(
+            f"sts-public-fit-sampling-v1:{request.privacy.sampling_seed}".encode()
+        ).digest()
+        predicate = PublicFitSamplingPredicate(request.privacy.fit_sampling_rate, public_key)
+        ledger = self.repository.reserve_ledger_run(
+            scope.privacy_scope_id,
+            record.job_id,
+            epsilon_model=request.privacy.epsilon_model,
+            delta=request.privacy.delta,
+            record={
+                "version": "1.0",
+                "mechanism": "MST",
+                "package_version": "0.1.9",
+                "adjacency": request.privacy.adjacency,
+                "privacy_unit": request.privacy.privacy_unit,
+                "epsilon_model": str(request.privacy.epsilon_model),
+                "delta": str(request.privacy.delta),
+                "epsilon_preprocess": 0,
+                "public_metadata_sha256": public_file.sha256,
+                "public_target_count": request.privacy.public_target_count,
+                "fit_sampling": predicate.public_contract(),
+                "state_estimate": admission.estimate.model_dump(mode="json"),
+            },
+        )
+        cancellation = attempt_dir / "cancel.requested"
+        if cancellation.exists():
+            self.repository.transition_ledger_run(
+                ledger.run_id, LedgerRunState.ABORTED_BEFORE_PRIVATE_ACCESS
+            )
+            raise DomainError(ErrorCode.INVALID_STATE, "job cancelled before private access")
+        self.repository.transition_ledger_run(ledger.run_id, LedgerRunState.SPENT_NOT_RELEASED)
+        normalized = self.workspace.resolve_relative(
+            manifest.normalized.relative_path, require_exists=True
+        )
+        encoded_path = attempt_dir / "dpmm-private-fit.csv"
+        part = encoded_path.with_name(f".{encoded_path.name}.{uuid4().hex}.part")
+        selected_rows = 0
+        maximum_rows = self.worker_lease_bytes // max(64, len(codebook.domain) * 64)
+        parquet_source = pq.ParquetFile(normalized)
+        try:
+            with part.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=list(codebook.domain))
+                writer.writeheader()
+                for batch in parquet_source.iter_batches(
+                    batch_size=65_536, columns=list(codebook.domain)
+                ):
+                    for row in batch.to_pylist():
+                        if not predicate.selected(row):
+                            continue
+                        selected_rows += 1
+                        if selected_rows > maximum_rows:
+                            raise DomainError(
+                                ErrorCode.RESOURCE_LIMIT,
+                                "public fit predicate selected more rows than the "
+                                "worker lease permits",
+                                context={
+                                    "maximum_selected_rows": maximum_rows,
+                                    "truncated": False,
+                                    "amplification_claimed": False,
+                                },
+                            )
+                        writer.writerow(codebook.encode_row(row))
+                handle.flush()
+                os.fsync(handle.fileno())
+            if selected_rows == 0:
+                raise DomainError(
+                    ErrorCode.DP_DOMAIN_TOO_LARGE,
+                    "public fit predicate selected no rows",
+                )
+            os.replace(part, encoded_path)
+        finally:
+            parquet_source.close()
+            part.unlink(missing_ok=True)
+        encoded_sha, encoded_size = sha256_file(encoded_path)
+        checkpoint_relative = (
+            attempt_dir.relative_to(self.workspace.root) / "dpmm-checkpoint"
+        ).as_posix()
+        worker_request = WorkerRequestEnvelope(
+            request_id=str(uuid4()),
+            job_id=str(record.job_id),
+            attempt=record.attempt,
+            worker_kind="dpmm",
+            operation="fit",
+            manifest_snapshot=ManifestSnapshot(
+                workspace_root=str(self.workspace.root),
+                files={
+                    "private_fit_sample": SnapshotFile(
+                        path=self.workspace.as_relative(encoded_path),
+                        sha256=encoded_sha,
+                        size_bytes=encoded_size,
+                    ),
+                    "public_metadata": SnapshotFile(
+                        path=self.workspace.as_relative(public_path),
+                        sha256=public_file.sha256,
+                        size_bytes=public_file.size_bytes,
+                    ),
+                },
+            ),
+            limits={
+                "max_process_tree_rss_bytes": self.worker_lease_bytes,
+                "dpmm": {
+                    "epsilon_model": str(request.privacy.epsilon_model),
+                    "delta": str(request.privacy.delta),
+                    "domain": codebook.domain,
+                    "max_model_size": 512,
+                    "checkpoint_path": checkpoint_relative,
+                    "ledger_run_id": str(ledger.run_id),
+                },
+            },
+            cancellation_path=(
+                attempt_dir.relative_to(self.workspace.root) / "cancel.requested"
+            ).as_posix(),
+        )
+        _atomic_bytes(plan_path, worker_request.model_dump_json().encode())
+        _atomic_bytes(
+            attempt_dir / "dpmm-plan-metadata.json",
+            json.dumps(
+                {
+                    "version": "1.0",
+                    "ledger_run_id": str(ledger.run_id),
+                    "public_metadata": public_manifest.model_dump(mode="json"),
+                    "selected_fit_rows": selected_rows,
+                    "sampling_seed": request.privacy.sampling_seed,
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode(),
+        )
+        return worker_request
 
     def _build_argn_plan(
         self,
@@ -492,9 +797,16 @@ class JobService:
         if value.mode == "differential_privacy":
             # This is intentionally before every repository, source, and ledger operation.
             self._verified_dp_gate(value.synthesizer)
-        if not isinstance(value, UtilitySynthesisRequest):
-            raise DomainError(ErrorCode.BACKEND_INCOMPATIBLE, "unsupported synthesis backend")
-        _, manifest, availability = self._validate_utility(value)
+        if isinstance(value, UtilitySynthesisRequest):
+            _, manifest, availability = self._validate_utility(value)
+            dp_context = None
+            worker_kind = "argn"
+        else:
+            dp_context = self._validate_dp(value)
+            manifest = dp_context[0]
+            availability = None
+            worker_kind = "dpmm"
+        disk_estimate = self._admit_job_disk(value, manifest)
         try:
             record = self.repository.create_job(request, idempotency_key=idempotency_key)
         except ValueError as error:
@@ -510,11 +822,14 @@ class JobService:
             )
         if record.state is JobState.QUEUED:
             try:
-                worker_request = (
-                    self._build_argn_plan(record, value, manifest, availability)
-                    if self.runtime is None
-                    else None
-                )
+                if self.runtime is None:
+                    worker_request = (
+                        self._build_argn_plan(record, value, manifest, availability)
+                        if isinstance(value, UtilitySynthesisRequest)
+                        else self._build_dpmm_plan(record, value, *dp_context[0:])
+                    )
+                else:
+                    worker_request = None
                 record = self.repository.transition_job(
                     record.job_id,
                     JobState.ADMITTED,
@@ -528,9 +843,20 @@ class JobService:
                     completed=1,
                     code="JOB_ADMITTED",
                     metrics={
-                        "worker_kind": "argn",
+                        "worker_kind": worker_kind,
                         "operation": "fit",
                         "plan_ready": worker_request is not None,
+                        "resource_profile": (
+                            self.resource_plan.resource_profile
+                            if self.resource_plan is not None
+                            else value.resource_profile
+                        ),
+                        "worker_lease_bytes": self.worker_lease_bytes,
+                        "disk_required_bytes": (
+                            disk_estimate.required_additional_free_bytes
+                            if disk_estimate is not None
+                            else None
+                        ),
                     },
                 )
             except Exception as error:
@@ -559,12 +885,13 @@ class JobService:
                         ),
                     )
                 raise
+        response = self.get(record.job_id)
         if (
             self.runtime is not None
             and self.repository.get_job(record.job_id).state is JobState.ADMITTED
         ):
             self.runtime.submit(record.job_id)
-        return self.get(record.job_id)
+        return response
 
     def get(self, job_id: UUID | str) -> dict[str, Any]:
         record = self.repository.get_job(job_id)
@@ -576,6 +903,7 @@ class JobService:
         if record.state in {JobState.FAILED, JobState.CANCELLED} and record.resume_boundary:
             actions.append("resume")
         plan_ready = self._plan_path(record).is_file()
+        request = self.repository.get_job_request(job_id).value
         return {
             "job_id": str(record.job_id),
             "dataset_id": str(record.dataset_id),
@@ -587,13 +915,37 @@ class JobService:
             "progress": latest.payload if latest else None,
             "legal_actions": actions,
             "planning_request": {
-                "worker_kind": "argn",
+                "worker_kind": (
+                    "dpmm" if isinstance(request, DifferentialPrivacySynthesisRequest) else "argn"
+                ),
                 "operation": "fit",
                 "ready": plan_ready,
             }
             if plan_ready
             else None,
         }
+
+    def list_recent(
+        self,
+        *,
+        limit: int = 20,
+        dataset_id: UUID | None = None,
+    ) -> dict[str, Any]:
+        jobs: list[dict[str, Any]] = []
+        for record in self.repository.list_jobs(limit=limit, dataset_id=dataset_id):
+            request = self.repository.get_job_request(record.job_id).value
+            snapshot = self.get(record.job_id)
+            snapshot.update(
+                {
+                    "mode": request.mode,
+                    "synthesizer": request.synthesizer,
+                    "output_rows": request.output_rows,
+                    "created_at": record.created_at,
+                    "updated_at": record.updated_at,
+                }
+            )
+            jobs.append(snapshot)
+        return {"version": "1.0", "jobs": jobs}
 
     def cancel(self, job_id: UUID | str) -> tuple[int, dict[str, Any]]:
         record = self.repository.get_job(job_id)
@@ -674,6 +1026,13 @@ class JobService:
 
 def create_job_router(service: JobService) -> APIRouter:
     router = APIRouter(prefix="/api/v1/jobs", tags=["jobs"])
+
+    @router.get("")
+    def list_jobs(
+        limit: int = Query(default=20, ge=1, le=100),
+        dataset_id: UUID | None = None,
+    ) -> dict[str, Any]:
+        return service.list_recent(limit=limit, dataset_id=dataset_id)
 
     @router.post("", status_code=status.HTTP_201_CREATED)
     def create_job(

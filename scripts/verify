@@ -1005,7 +1005,7 @@ def run_scale(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
 
 
 SAMPLE_COLUMNS = [
-    "Index",
+    "ROW_INDEX",
     "BASE_YEAR",
     "REP_SEX_CODE",
     "BIRTH_YEAR",
@@ -1028,7 +1028,7 @@ SAMPLE_COLUMNS = [
     "SUBCLASS_CODE",
 ]
 SAMPLE_INTEGER_COLUMNS = {
-    "Index",
+    "ROW_INDEX",
     "BASE_YEAR",
     "BIRTH_YEAR",
     "ACTIVITY_CODE",
@@ -1071,12 +1071,41 @@ def sample_column_schemas():
     )
 
 
+SAMPLE_COLUMN_MAP_PATH = PROJECT_ROOT / "benchmarks" / "sample-column-map.json"
+
+
+def sample_source_column_map() -> dict[str, str]:
+    """Canonical column name -> header used by the local benchmark file.
+
+    The benchmark CSV is not part of this repository and may use its own header
+    names. Provide `benchmarks/sample-column-map.json` (canonical -> source) to
+    read it without renaming anything; with no map the headers are assumed to
+    already be the canonical names.
+    """
+
+    path = Path(os.environ.get("STS_SAMPLE_COLUMN_MAP", SAMPLE_COLUMN_MAP_PATH))
+    if not path.is_file():
+        return {}
+    mapping = json.loads(path.read_text(encoding="utf-8"))
+    unknown = sorted(set(mapping) - set(SAMPLE_COLUMNS))
+    if unknown:
+        raise SystemExit(f"{path}: unknown canonical columns {unknown}")
+    return {str(key): str(value) for key, value in mapping.items()}
+
+
 def sample_csv_relation(path: Path) -> tuple[str, list[object]]:
-    return (
+    read = (
         "read_csv(?, header=true, all_varchar=true, delim=',', quote='\"', "
-        "escape='\"', nullstr=['__STS_NULL_SENTINEL_6f7d8432__'], ignore_errors=false)",
-        [str(path)],
+        "escape='\"', nullstr=['__STS_NULL_SENTINEL_6f7d8432__'], ignore_errors=false)"
     )
+    mapping = sample_source_column_map()
+    if not mapping:
+        return read, [str(path)]
+    projection = ",".join(
+        f"{quote_identifier(mapping.get(column, column))} AS {quote_identifier(column)}"
+        for column in SAMPLE_COLUMNS
+    )
+    return f"(SELECT {projection} FROM {read})", [str(path)]
 
 
 def sample_normalize_projection(*, include_row_id: bool = True) -> str:
@@ -1167,7 +1196,7 @@ def sample_reconstruction_projection(*, index_offset: int) -> list[str]:
     select: list[str] = []
     for column in SAMPLE_COLUMNS:
         quoted = quote_identifier(column)
-        if column == "Index":
+        if column == "ROW_INDEX":
             select.append(
                 f"(row_number() OVER () + {index_offset})::BIGINT AS {quoted}"
             )
@@ -1307,7 +1336,7 @@ def coordinate_sample_residual_rejection(
             )
         copy_query_atomic(
             connection,
-            'SELECT * FROM read_parquet(?) ORDER BY "Index"',
+            'SELECT * FROM read_parquet(?) ORDER BY "ROW_INDEX"',
             [[str(path) for path in accepted_paths]],
             output_path,
             format_clause="FORMAT PARQUET, COMPRESSION ZSTD",
@@ -1536,7 +1565,7 @@ def run_sample_argn(
         for column in SAMPLE_COLUMNS
         if column
         not in {
-            "Index",
+            "ROW_INDEX",
             "REP_SEX_CODE",
             "INDUSTRY_CODE",
             "EMP_ALL_TOTAL",
@@ -2189,7 +2218,7 @@ def run_sample(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
             null_marker = "__STS_NULL_SAMPLE_M4__"
             copy_query_atomic(
                 connection,
-                f"SELECT {projection} FROM read_parquet(?) ORDER BY {quote_identifier('Index')}",
+                f"SELECT {projection} FROM read_parquet(?) ORDER BY {quote_identifier('ROW_INDEX')}",
                 [str(output_path)],
                 csv_path,
                 format_clause=(
@@ -2368,9 +2397,7 @@ def parser() -> argparse.ArgumentParser:
         "--input",
         type=Path,
         default=Path(
-            os.environ.get(
-                "STS_SAMPLE_CSV", "<local-sample>.csv"
-            )
+            os.environ.get("STS_SAMPLE_CSV", str(PROJECT_ROOT / "var" / "sample.csv"))
         ),
     )
     sample.add_argument("--workspace", type=Path)

@@ -798,6 +798,7 @@ def create_argn_fit_request(
         manifest_snapshot=snapshot,
         limits={
             "worker_rss_bytes": worker_lease_bytes,
+            "max_process_tree_rss_bytes": worker_lease_bytes,
             "argn": {
                 "checkpoint_path": checkpoint_path,
                 "max_epochs": max_epochs,
@@ -874,6 +875,7 @@ def create_argn_generate_request(
         manifest_snapshot=snapshot,
         limits={
             "worker_rss_bytes": worker_lease_bytes,
+            "max_process_tree_rss_bytes": worker_lease_bytes,
             "argn": {
                 "checkpoint_path": checkpoint_path,
                 "candidate_output_path": candidate_output_path,

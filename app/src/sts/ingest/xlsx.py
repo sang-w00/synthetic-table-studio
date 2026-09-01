@@ -123,6 +123,32 @@ def _unsafe(reason: str, detail: str, **context: Any) -> DomainError:
     )
 
 
+_XML_PROLOG_SCAN_BYTES = 64 * 1024
+
+
+@contextlib.contextmanager
+def _open_xml(archive: zipfile.ZipFile, info: zipfile.ZipInfo):
+    """Open a package member for streaming XML parsing, with entity expansion refused.
+
+    ``ElementTree`` expands internally declared entities, so a few hundred bytes of
+    nested declarations can exhaust memory before any size or ratio guard applies.
+    Custom entities require a document type declaration, which XML only permits in the
+    prolog, so refusing a DOCTYPE in the member head closes that path and the external
+    entity path with it.
+    """
+
+    with archive.open(info) as probe:
+        head = probe.read(_XML_PROLOG_SCAN_BYTES).lower()
+    if b"<!doctype" in head or b"<!entity" in head:
+        raise _unsafe(
+            "PACKAGE_STRUCTURE",
+            "XLSX XML parts must not declare a document type or entities",
+            member=info.filename,
+        )
+    with archive.open(info) as stream:
+        yield stream
+
+
 def _local_name(tag: str) -> str:
     return tag.rpartition("}")[2]
 
@@ -193,7 +219,7 @@ def _parse_relationships(
     source_part: str,
 ) -> dict[str, tuple[str, str]]:
     relationships: dict[str, tuple[str, str]] = {}
-    with archive.open(info) as stream:
+    with _open_xml(archive, info) as stream:
         for event, element in ElementTree.iterparse(stream, events=("start", "end")):
             if event == "start" and _local_name(element.tag) == "Relationship":
                 relationship_id = element.attrib.get("Id")
@@ -230,7 +256,7 @@ def _read_workbook_sheets(
 ) -> tuple[_WorkbookSheet, ...]:
     sheets: list[_WorkbookSheet] = []
     names: set[str] = set()
-    with archive.open(workbook_info) as stream:
+    with _open_xml(archive, workbook_info) as stream:
         for event, element in ElementTree.iterparse(stream, events=("start", "end")):
             if event == "start" and _local_name(element.tag) == "sheet":
                 name = element.attrib.get("name")
@@ -263,7 +289,7 @@ def _read_workbook_sheets(
 
 
 def _scan_content_types(archive: zipfile.ZipFile, info: zipfile.ZipInfo) -> None:
-    with archive.open(info) as stream:
+    with _open_xml(archive, info) as stream:
         for _, element in ElementTree.iterparse(stream, events=("end",)):
             content_type = element.attrib.get("ContentType", "").casefold()
             if "macroenabled" in content_type or "vbaproject" in content_type:
@@ -278,7 +304,7 @@ def _scan_worksheet(archive: zipfile.ZipFile, info: zipfile.ZipInfo) -> _SheetSt
     current_row = 0
     next_column = 1
 
-    with archive.open(info) as stream:
+    with _open_xml(archive, info) as stream:
         for event, element in ElementTree.iterparse(stream, events=("start", "end")):
             local_name = _local_name(element.tag)
             if event == "start":

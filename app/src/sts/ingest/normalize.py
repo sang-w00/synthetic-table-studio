@@ -43,7 +43,8 @@ class NormalizationResult:
 
 
 def raw_columns(path: str | Path) -> tuple[str, ...]:
-    names = pq.ParquetFile(Path(path)).schema_arrow.names
+    with pq.ParquetFile(Path(path)) as parquet:
+        names = parquet.schema_arrow.names
     if len(names) != len(set(names)):
         raise DomainError(ErrorCode.SCHEMA_INVALID, "input has duplicate column names")
     visible = tuple(name for name in names if name != "__sts_row_id")
@@ -179,14 +180,14 @@ def normalize_to_parquet(
         row_count = int(row_stats[0])
         if row_count == 0:
             raise DomainError(ErrorCode.SCHEMA_INVALID, "input contains no records")
-        if (
-            int(row_stats[1]) != 0
-            or int(row_stats[2]) != row_count - 1
-            or int(row_stats[3]) != row_count
-        ):
+        # Ingest deliberately preserves source record positions, so skipping malformed
+        # records leaves gaps in the id sequence. Uniqueness and non-negativity are what
+        # every downstream consumer actually requires; demanding contiguity here made
+        # malformed="skip" fail at the next step for every file that used it.
+        if int(row_stats[1]) < 0 or int(row_stats[3]) != row_count:
             raise DomainError(
                 ErrorCode.SCHEMA_INVALID,
-                "__sts_row_id must be a unique contiguous 0-based logical record number",
+                "__sts_row_id must be a unique nonnegative logical record number",
             )
 
         selections = ['CAST("__sts_row_id" AS BIGINT) AS "__sts_row_id"']
