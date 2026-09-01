@@ -98,6 +98,11 @@ DP_LEDGER_ALLOWLIST = frozenset(
         "public_target_count",
         "public_target_count_provenance",
         "release_count",
+        "composition_version",
+        "epsilon_total",
+        "delta_total",
+        "spent_runs",
+        "lock_sha256",
         "rule_postprocessing",
         "limitations",
     }
@@ -463,6 +468,36 @@ def _quality_summary(evaluation: Mapping[str, Any]) -> tuple[str, dict[str, Any]
     return overall, {"heading": "재현 품질", "paragraphs": paragraphs}
 
 
+def _composition_sentence(ledger: Mapping[str, Any]) -> str:
+    """State the scope's cumulative budget, or say plainly that it is unknown.
+
+    Basic sequential composition means the guarantee that actually covers the source
+    is the sum over every run that touched it, not the pair applied to this one run.
+    """
+
+    epsilon_total = ledger.get("epsilon_total")
+    delta_total = ledger.get("delta_total")
+    spent_runs = _number(ledger.get("spent_runs"))
+    release_count = _number(ledger.get("release_count"))
+    if epsilon_total is None or delta_total is None or spent_runs is None:
+        return (
+            "누적 예산: 이 자료에 대해 지금까지 사용한 누적 예산을 확인할 수 없습니다. "
+            "확인하기 전에는 이 결과의 ε와 δ를 자료 전체의 보호 수준으로 해석하면 안 됩니다."
+        )
+    releases = "확인 불가" if release_count is None else f"{int(release_count):,}회"
+    return (
+        f"누적 예산: 같은 원본 자료에서 지금까지 개인정보 예산을 사용한 실행은 "
+        f"{int(spent_runs):,}회이고, 그중 공개된 것은 {releases}입니다. "
+        f"basic sequential composition으로 합산한 누적 보호 매개변수는 "
+        f"ε={epsilon_total}, δ={delta_total}입니다. 이 자료 전체에 실제로 적용되는 보장은 "
+        "이 결과 하나의 ε·δ가 아니라 이 누적값이며, 실행을 반복할수록 커집니다. "
+        "합산은 각 실행의 예산을 그대로 더하는 보수적인 방식이므로 실제 손실보다 "
+        "작게 계산되지는 않습니다. 다만 이 합산은 같은 원본 파일로 인식된 실행만 "
+        "포함합니다. 같은 사람이 다른 파일에도 들어 있다면 그 실행의 예산은 여기에 "
+        "더해지지 않으므로, 사람 단위의 실제 누적 손실은 이 값보다 클 수 있습니다."
+    )
+
+
 def _privacy_summary(
     evaluation: Mapping[str, Any] | None,
     *,
@@ -486,13 +521,7 @@ def _privacy_summary(
             f"보호 매개변수는 ε={epsilon}, δ={delta}이며, 이는 안전한 사람의 비율이나 "
             "재식별 확률이 아니라 한 행의 포함 여부가 결과 확률에 미치는 영향의 상한입니다."
         )
-        release_count = formal_dp_ledger.get("release_count")
-        if release_count is not None:
-            paragraphs.append(
-                f"같은 privacy scope에서 확인된 누적 공개 횟수는 "
-                f"{_format_metric(release_count)}회입니다. 반복 공개에서는 각 실행을 따로 "
-                "보지 말고 ledger의 누적 ε와 δ를 함께 검토해야 합니다."
-            )
+        paragraphs.append(_composition_sentence(formal_dp_ledger))
 
     if release_report:
         paragraphs.append(
@@ -895,11 +924,7 @@ def _dp_narrative(
             "같은 조건에서는 일반적으로 ε와 δ가 작을수록 더 강한 보호를 뜻하지만, "
             "자료 범위와 반복 공개 횟수를 함께 봐야 합니다."
         ),
-        (
-            f"Privacy ledger: 이 공개의 누적 공개 횟수는 "
-            f"{_format_metric(ledger.get('release_count'))}회입니다. 이 값과 ledger의 "
-            "누적 예산을 확인하지 않고 다른 결과와 독립적인 보호 보장으로 해석하면 안 됩니다."
-        ),
+        _composition_sentence(ledger),
         (
             "유사도 분석: 이 공개용 DP 보고서에는 원본·holdout에서 계산한 KS, TVD, "
             "C2ST 및 경험적 공격 결과를 넣지 않았습니다. 해당 값은 원본에서 파생된 "

@@ -21,6 +21,23 @@ _REQUIRED_FORMAL_GATES = frozenset(
 )
 
 
+class DpMechanismProvenance(CanonicalModel):
+    """Release-safe identity of the mechanism build that produced a guarantee.
+
+    Every field is copied from the verified Phase-0 probe result, so an external
+    reader can check which wheel and which (epsilon, delta) -> rho conversion the
+    released model was actually produced by. A field the probe does not carry is
+    left as None and is then dropped by the release allowlist rather than guessed.
+    """
+
+    version: Literal["1.0"] = "1.0"
+    package_version: str | None = None
+    wheel_sha256: str | None = None
+    lock_sha256: str | None = None
+    accountant: str | None = None
+    conversion: str | None = None
+
+
 class FormalDpAvailability(CanonicalModel):
     version: Literal["1.0"] = "1.0"
     formal_dp_enabled: bool
@@ -37,6 +54,52 @@ def default_dpmm_probe_result_path() -> Path:
         return Path(configured).expanduser().resolve(strict=False)
     project_root = Path(__file__).resolve().parents[4]
     return project_root / "probes" / "results" / "dpmm_contract.json"
+
+
+def load_dp_mechanism_provenance(
+    path: str | Path | None = None,
+) -> DpMechanismProvenance:
+    """Read the mechanism build identity, or return an empty record if unreadable."""
+
+    result_path = (
+        Path(path).expanduser().resolve(strict=False)
+        if path is not None
+        else default_dpmm_probe_result_path()
+    )
+    try:
+        payload = json.loads(result_path.read_text(encoding="utf-8"))
+        environment = payload.get("environment")
+        audit = payload.get("accounting_audit")
+        if not isinstance(environment, dict):
+            environment = {}
+        if not isinstance(audit, dict):
+            audit = {}
+        declared = environment.get("declared_versions")
+        package_version = (
+            str(declared["dpmm"]) if isinstance(declared, dict) and "dpmm" in declared else None
+        )
+        conversion = audit.get("conversion")
+        conversion_label = None
+        if isinstance(conversion, dict) and "rho" in conversion:
+            # The zCDP rho the (epsilon, delta) pair was converted into, named so an
+            # external reader can reproduce the conversion rather than trust a label.
+            conversion_label = f"epsilon_delta_to_zcdp_rho={conversion['rho']}"
+        return DpMechanismProvenance(
+            package_version=package_version,
+            wheel_sha256=_optional_digest(environment.get("dpmm_wheel_sha256")),
+            lock_sha256=_optional_digest(environment.get("lock_sha256")),
+            accountant="basic_sequential",
+            conversion=conversion_label,
+        )
+    except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+        return DpMechanismProvenance()
+
+
+def _optional_digest(value: object) -> str | None:
+    text = str(value).lower() if value is not None else ""
+    if len(text) != 64 or any(character not in "0123456789abcdef" for character in text):
+        return None
+    return text
 
 
 def load_dp_availability(path: str | Path | None = None) -> FormalDpAvailability:
@@ -94,7 +157,9 @@ def load_dp_availability(path: str | Path | None = None) -> FormalDpAvailability
 
 
 __all__ = [
+    "DpMechanismProvenance",
     "FormalDpAvailability",
     "default_dpmm_probe_result_path",
     "load_dp_availability",
+    "load_dp_mechanism_provenance",
 ]

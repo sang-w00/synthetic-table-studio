@@ -47,6 +47,7 @@ from sts.privacy import (
     PublicFitSamplingPredicate,
     admit_mst_domain,
     load_dp_availability,
+    load_dp_mechanism_provenance,
     validate_public_metadata,
 )
 from sts.rules import RuleSpec, compile_rules
@@ -552,25 +553,53 @@ class JobService:
             f"sts-public-fit-sampling-v1:{request.privacy.sampling_seed}".encode()
         ).digest()
         predicate = PublicFitSamplingPredicate(request.privacy.fit_sampling_rate, public_key)
+        provenance = load_dp_mechanism_provenance(self.dpmm_probe_path)
+        compiled_dp = self._compiled_rules(manifest, mode="differential_privacy")
+        limitations: list[str] = []
+        if Decimal(str(request.privacy.delta)) > Decimal(1) / Decimal(
+            request.privacy.public_target_count
+        ):
+            limitations.append("delta_exceeds_inverse_public_target_count_advisory")
+        reservation = {
+            "version": "1.0",
+            "mechanism": "MST",
+            "package_version": provenance.package_version or "0.1.9",
+            "adjacency": request.privacy.adjacency,
+            "privacy_unit": request.privacy.privacy_unit,
+            "epsilon_model": str(request.privacy.epsilon_model),
+            "delta": str(request.privacy.delta),
+            "epsilon_preprocess": 0,
+            "public_metadata_sha256": public_file.sha256,
+            # The release allowlist projects `public_metadata_hashes`; the singular key
+            # above is kept for the curator record.
+            "public_metadata_hashes": [public_file.sha256],
+            "public_target_count": request.privacy.public_target_count,
+            "public_target_count_provenance": (
+                f"user_attested_public_metadata:{public_manifest.provenance.attested_by}"
+            ),
+            "rule_postprocessing": [
+                {"id": str(rule.id), "kind": str(rule.kind)} for rule in compiled_dp.rules
+            ],
+            "limitations": limitations,
+            "fit_sampling": predicate.public_contract(),
+            "state_estimate": admission.estimate.model_dump(mode="json"),
+        }
+        # Only record mechanism identity the probe actually carries; a missing field is
+        # dropped by the allowlist rather than filled with a plausible-looking value.
+        for key, value in (
+            ("accountant", provenance.accountant),
+            ("conversion", provenance.conversion),
+            ("wheel_sha256", provenance.wheel_sha256),
+            ("lock_sha256", provenance.lock_sha256),
+        ):
+            if value is not None:
+                reservation[key] = value
         ledger = self.repository.reserve_ledger_run(
             scope.privacy_scope_id,
             record.job_id,
             epsilon_model=request.privacy.epsilon_model,
             delta=request.privacy.delta,
-            record={
-                "version": "1.0",
-                "mechanism": "MST",
-                "package_version": "0.1.9",
-                "adjacency": request.privacy.adjacency,
-                "privacy_unit": request.privacy.privacy_unit,
-                "epsilon_model": str(request.privacy.epsilon_model),
-                "delta": str(request.privacy.delta),
-                "epsilon_preprocess": 0,
-                "public_metadata_sha256": public_file.sha256,
-                "public_target_count": request.privacy.public_target_count,
-                "fit_sampling": predicate.public_contract(),
-                "state_estimate": admission.estimate.model_dump(mode="json"),
-            },
+            record=reservation,
         )
         cancellation = attempt_dir / "cancel.requested"
         if cancellation.exists():

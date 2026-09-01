@@ -602,12 +602,20 @@ class UtilityJobRuntime:
         released = self.repository.transition_ledger_run(
             plan_metadata["ledger_run_id"], LedgerRunState.RELEASED, model_id=uuid4()
         )
+        # Composition is read after the release transition, so this run is included.
+        # Never default: if the ledger cannot be read the job fails rather than
+        # publishing a report that understates the cumulative budget.
+        composition = self.repository.ledger_scope_composition(released.privacy_scope_id)
         ledger_projection = {
             **released.record,
             "run_id": str(released.run_id),
             "model_id": str(released.model_id),
             "privacy_scope_id": str(released.privacy_scope_id),
-            "release_count": 1,
+            "accountant": composition["accountant"],
+            "epsilon_total": composition["epsilon_total"],
+            "delta_total": composition["delta_total"],
+            "spent_runs": composition["spent_runs"],
+            "release_count": composition["release_count"],
         }
         artifacts = await asyncio.to_thread(
             self._publish_exports, record, staged, release_safe=True

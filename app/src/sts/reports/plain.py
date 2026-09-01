@@ -315,6 +315,34 @@ def _key_metric_table(document: Mapping[str, object]) -> Table:
                 "무엇을 한 사람으로 보고 보호했는지를 나타냅니다.",
             )
         )
+        epsilon_total = ledger.get("epsilon_total")
+        delta_total = ledger.get("delta_total")
+        if epsilon_total is not None and delta_total is not None:
+            rows.append(
+                (
+                    "누적 ε / δ (이 자료 전체)",
+                    f"ε={epsilon_total} / δ={delta_total}",
+                    "같은 원본으로 실행한 모든 작업을 합산한 값입니다. 자료 전체에 실제로 "
+                    "적용되는 보장은 위 한 건의 값이 아니라 이 누적값입니다.",
+                )
+            )
+            rows.append(
+                (
+                    "예산을 쓴 실행 / 공개",
+                    f"{_count(ledger.get('spent_runs'))}회 / "
+                    f"{_count(ledger.get('release_count'))}회",
+                    "실행할수록 누적 ε가 커집니다. 공개하지 않은 실행도 예산을 씁니다.",
+                )
+            )
+        else:
+            rows.append(
+                (
+                    "누적 ε / δ (이 자료 전체)",
+                    "확인 불가",
+                    "누적 예산을 확인하기 전에는 위 ε·δ를 자료 전체의 보호 수준으로 "
+                    "해석하면 안 됩니다.",
+                )
+            )
     return Table(("항목", "값", "어떻게 읽나요"), tuple(rows), (5, 5, 12))
 
 

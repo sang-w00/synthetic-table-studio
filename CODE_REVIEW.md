@@ -4,9 +4,10 @@
 읽어 재현 경로를 확인한 것만 적었고, 스타일 지적이나 "리팩터링하면 좋겠다" 류는 뺐습니다.
 
 - **이번에 고친 것**: 15건. 아래 1장.
-- **남은 것**: 18건. 아래 2장. 설계 판단이 필요하거나 변경 폭이 커서 손대지 않았습니다.
+- **남은 것**: 16건. 아래 2장. 설계 판단이 필요하거나 변경 폭이 커서 손대지 않았습니다.
+- **이후 해결**: A(누적 예산 합성)와 D(ledger allowlist 미충족)는 2026-09-01에 구현했습니다.
 
-검증: `pytest tests/unit tests/integration` 196건 통과, `ruff format`/`ruff check` 통과,
+검증: `pytest tests/unit tests/integration` 202건 통과, `ruff format`/`ruff check` 통과,
 `tsc -b`·`eslint --max-warnings 0`·`vite build` 통과(주 번들 263.9 kB).
 
 추가로, 실제 서버(FastAPI + 결정적 경량 어댑터 + eval worker)와 빌드된 프런트엔드를 띄우고
@@ -83,15 +84,20 @@ Chromium으로 **6단계 워크플로 전체를 실행**했습니다. 업로드 
 
 ### 2.1 프라이버시 · DP 경계 — 설계 판단 필요
 
-**A. [치명적] DP 공개 보고서의 `release_count`가 상수 `1`이고, 누적 (ε, δ) 합성이 어디에서도
-계산되지 않습니다.** `jobs/runtime.py`가 ledger projection에 `"release_count": 1`을 그대로
-넣습니다. `release_count`·`composition()`·`release_projection()`을 구현한
-`privacy/ledger.py`의 `PrivacyLedger`는 `tests/unit/test_privacy.py`에서만 쓰이고 `app/src`
-어디에서도 호출되지 않습니다. 반면 `api/jobs.py`는 `dataset_manifest_sha256`으로 같은
-데이터셋의 모든 실행을 하나의 privacy scope에 묶으므로 실제로는 합성됩니다. ε=1짜리 작업을
-세 번 돌리면 실제 소모는 ε=3인데, 세 보고서 모두 "누적 공개 횟수는 1회"라고 외부 독자에게
-말합니다. 실제 ledger 릴리스 테이블에서 값을 읽고 scope 합성을 계산하도록 배선해야 하며,
-값을 못 읽으면 기본값을 쓰지 말고 실패해야 합니다.
+**A. ~~[치명적] DP 공개 보고서의 `release_count`가 상수 `1`~~ — 해결됨 (2026-09-01).**
+`CatalogRepository.ledger_scope_composition()`이 privacy scope 안에서 `spent_not_released`
+또는 `released` 상태인 모든 run의 ε과 δ를 basic sequential composition으로 합산합니다.
+`_run_dp_job`은 release 전이 **이후에** 이 값을 읽어 현재 run을 포함시키며, ledger를 읽지
+못하면 기본값을 쓰지 않고 작업이 실패합니다. 공개 보고서와 한글 문서는 이제 누적 ε·δ,
+예산을 쓴 실행 수, 공개 횟수를 함께 싣고, "자료 전체에 적용되는 보장은 이 결과 하나의 ε·δ가
+아니라 누적값"이라고 명시합니다. 공개하지 않은 실행도 원본을 건드린 시점에 손실이
+발생하므로 합산에 포함합니다.
+
+남은 한계 — **scope 경계는 도구가 볼 수 있는 것까지입니다.** privacy scope는
+`dataset_manifest_sha256`으로 묶이므로, 같은 사람이 서로 다른 파일에 들어 있으면 두 실행은
+합산되지 않습니다. 사람 단위의 실제 누적 손실은 보고된 값보다 클 수 있으며, 보고서 본문에도
+이 문장을 넣었습니다. 사람 단위로 정확히 합산하려면 업로드 간 개체 연결이 필요하고, 그건
+이 도구가 가진 정보로는 할 수 없습니다.
 
 **B. [높음] DP 경로가 빈 `StructuralCodecs(fixed_tuples={})`를 넘겨서 `fixed_combination`·
 `compare` 규칙이 있는 DP 작업이 반드시 실패합니다.** `runtime.py`의 `_write_dp_batch`와
@@ -107,13 +113,13 @@ Chromium으로 **6단계 워크플로 전체를 실행**했습니다. 업로드 
 여전히 공개 묶음을 돌려줍니다. release 전이 이후를 취소 불가 구간으로 두거나, terminal
 CANCELLED 작업을 `dp_release` scope에서 제외해야 합니다.
 
-**D. [중간] `DP_LEDGER_ALLOWLIST`의 대부분이 채워지지 않습니다.** 예약 시 기록하는 record에
-`accountant`, `conversion`, `wheel_sha256`, `public_metadata_hashes`,
-`public_target_count_provenance`, `rule_postprocessing`, `limitations`가 없습니다. 특히
-`public_metadata_sha256` ≠ 허용 목록의 `public_metadata_hashes`라 메타데이터 다이제스트가
-조용히 빠지고, `limitations`가 항상 비어 `privacy/ledger.py`의 `δ > 1/public_target_count`
-경고가 어떤 보고서에도 도달하지 않습니다. 외부 독자가 어떤 메커니즘 빌드가 그 보장을
-만들었는지 검증할 수 없습니다.
+**D. ~~[중간] `DP_LEDGER_ALLOWLIST`의 대부분이 채워지지 않음~~ — 해결됨 (2026-09-01).**
+예약 시점의 ledger record가 `accountant`, `conversion`, `wheel_sha256`, `lock_sha256`,
+`public_metadata_hashes`, `public_target_count_provenance`, `rule_postprocessing`,
+`limitations`를 담습니다. 메커니즘 신원(wheel/lock 해시, ε·δ → zCDP ρ 변환)은
+`load_dp_mechanism_provenance()`가 검증된 Phase-0 probe 결과에서 읽습니다. probe가 갖고
+있지 않은 값은 **추측해서 채우지 않고 생략**하며, allowlist projection이 그대로 떨어뜨립니다.
+`δ > 1/public_target_count` 권고도 이제 예약 시점에 계산되어 보고서까지 전달됩니다.
 
 **E. [중간] `workers/dpmm`이 감사 대상인 `PrivateFitRng`를 우회합니다.** worker가
 `np.random.RandomState(os.urandom(32))`를 직접 만들어서 `privacy/rng.py`의 도메인 분리

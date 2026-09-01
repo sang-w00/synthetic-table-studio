@@ -420,6 +420,10 @@ def test_dp_release_plain_language_summary_explains_formal_guarantee_without_per
             "delta": "0.000001",
             "privacy_unit": "row",
             "adjacency": "add_remove_one_row",
+            "accountant": "basic_sequential",
+            "epsilon_total": "9",
+            "delta_total": "0.000003",
+            "spent_runs": 3,
             "release_count": 2,
         },
         output_summary={
@@ -435,8 +439,41 @@ def test_dp_release_plain_language_summary_explains_formal_guarantee_without_per
     assert "ε=3" in privacy_text
     assert "δ=0.000001" in privacy_text
     assert "안전한 사람의 비율" in privacy_text
-    assert "누적 공개 횟수는 2회" in privacy_text
+    # The cumulative budget across the scope, not this one run's pair.
+    assert "실행은 3회" in privacy_text
+    assert "공개된 것은 2회" in privacy_text
+    assert "ε=9, δ=0.000003" in privacy_text
+    assert "이 결과 하나의 ε·δ가 아니라 이 누적값" in privacy_text
     assert "원본 기반 유사도와 공격 진단은 포함하지 않았습니다" in privacy_text
+    assert report.document["ledger"]["epsilon_total"] == "9"
+
+
+def test_dp_release_report_refuses_to_imply_a_single_release_without_composition() -> (
+    None
+):
+    """A ledger with no composition must say so, never fall back to "one release"."""
+
+    report = build_dp_release_report(
+        job_id=uuid4(),
+        ledger_projection={
+            "mechanism": "MST",
+            "epsilon_model": "3",
+            "delta": "0.000001",
+            "privacy_unit": "row",
+            "adjacency": "add_remove_one_row",
+        },
+        output_summary={
+            "requested_rows": 1_000,
+            "actual_rows": 1_000,
+            "hard_rule_violations": 0,
+        },
+    )
+    privacy_text = " ".join(
+        report.document["executive_summary"]["privacy"]["paragraphs"]
+    )
+    assert "누적 예산을 확인할 수 없습니다" in privacy_text
+    assert "자료 전체의 보호 수준으로 해석하면 안 됩니다" in privacy_text
+    assert "epsilon_total" not in report.document["ledger"]
 
 
 def test_dp_release_uses_positive_allowlists_and_recursively_excludes_private_fields() -> (

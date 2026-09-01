@@ -1,7 +1,9 @@
 from .availability import (
+    DpMechanismProvenance,
     FormalDpAvailability,
     default_dpmm_probe_result_path,
     load_dp_availability,
+    load_dp_mechanism_provenance,
 )
 from .capacity import (
     DEFAULT_DP_WORKER_RSS_LEASE_BYTES,
@@ -42,6 +44,7 @@ __all__ = [
     "MAX_MODELED_COLUMNS",
     "MAX_STATES_PER_COLUMN",
     "DiscreteCodebook",
+    "DpMechanismProvenance",
     "FormalDpAvailability",
     "LedgerReleaseProjection",
     "LedgerRun",
@@ -65,5 +68,6 @@ __all__ = [
     "default_dpmm_probe_result_path",
     "estimate_mst_state",
     "load_dp_availability",
+    "load_dp_mechanism_provenance",
     "validate_public_metadata",
 ]

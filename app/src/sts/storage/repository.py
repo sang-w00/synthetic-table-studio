@@ -1151,6 +1151,41 @@ class CatalogRepository:
             )
         return self.get_ledger_run(identifier)
 
+    def ledger_scope_composition(self, privacy_scope_id: UUID | str) -> dict[str, Any]:
+        """Basic sequential composition of every run that touched the private source.
+
+        A run counts toward the total once it reaches ``spent_not_released``: the
+        privacy loss happened at that point whether or not the result was ever
+        released. ``release_count`` counts only the runs actually released, which is
+        what a reader of one released report needs in order to see that other
+        releases exist against the same source.
+
+        Basic sequential composition is the conservative choice: it never claims a
+        tighter bound than the mechanism actually provides.
+        """
+
+        with self._lock:
+            rows = self._connection.execute(
+                """
+                SELECT state, epsilon_model, delta FROM ledger_runs
+                WHERE privacy_scope_id = ?
+                  AND state IN ('spent_not_released', 'released')
+                """,
+                (str(privacy_scope_id),),
+            ).fetchall()
+        epsilon_total = sum((Decimal(str(row["epsilon_model"])) for row in rows), Decimal(0))
+        delta_total = sum((Decimal(str(row["delta"])) for row in rows), Decimal(0))
+        released = sum(1 for row in rows if row["state"] == LedgerRunState.RELEASED.value)
+        return {
+            "composition_version": "1.0",
+            "accountant": "basic_sequential",
+            "privacy_scope_id": str(privacy_scope_id),
+            "epsilon_total": format(epsilon_total, "f"),
+            "delta_total": format(delta_total, "f"),
+            "spent_runs": len(rows),
+            "release_count": released,
+        }
+
     def transition_ledger_run(
         self,
         run_id: UUID | str,

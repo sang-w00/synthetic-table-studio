@@ -21,6 +21,18 @@
 
 ### Fixed
 
+- DP 공개 보고서가 누적 개인정보 예산을 실제로 계산합니다. 이전에는 `release_count`가 상수
+  `1`이라, 같은 원본으로 ε=1짜리 작업을 세 번 돌려도 모든 보고서가 "누적 공개 1회"라고
+  말했습니다. 이제 privacy scope 안에서 원본을 건드린 모든 실행(공개하지 않은 것 포함)을
+  basic sequential composition으로 합산해 누적 ε·δ, 예산 사용 실행 수, 공개 횟수를 보고서와
+  한글 문서에 싣습니다. ledger를 읽지 못하면 기본값을 쓰지 않고 작업이 실패합니다. 합산은
+  같은 원본 파일로 인식된 실행만 포함한다는 한계도 보고서 본문에 명시합니다.
+- DP release allowlist가 비어 있던 항목(`accountant`, `conversion`, `wheel_sha256`,
+  `lock_sha256`, `public_metadata_hashes`, `public_target_count_provenance`,
+  `rule_postprocessing`, `limitations`)을 예약 시점에 기록합니다. 메커니즘 신원은 검증된
+  probe 결과에서 읽고, probe에 없는 값은 추측하지 않고 생략합니다. 외부 독자가 어떤 wheel과
+  어떤 ε·δ → zCDP ρ 변환이 그 보장을 만들었는지 확인할 수 있습니다.
+
 - 한쪽 열만 상수인 경우 KS·TVD 거리를 실제 값 대신 최댓값 1.0으로 보고하던 문제를
   고쳤습니다. 해당 열이 baseline-excess 집계와 "우선 확인할 열"을 부당하게 지배했습니다.
 - `malformed="skip"`으로 취입한 자료가 정규화 단계에서 항상 거부되던 문제를 고쳤습니다.
