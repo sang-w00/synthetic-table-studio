@@ -37,7 +37,12 @@ DATASET_TRANSITIONS: dict[DatasetState, frozenset[DatasetState]] = {
     DatasetState.PROFILING: frozenset({DatasetState.PROFILED, DatasetState.FAILED}),
     DatasetState.PROFILED: frozenset({DatasetState.SCHEMA_READY}),
     DatasetState.SCHEMA_READY: frozenset({DatasetState.NORMALIZING}),
-    DatasetState.NORMALIZING: frozenset({DatasetState.NORMALIZED, DatasetState.FAILED}),
+    # PROFILED is the reopen path: a normalize that fails because the declared column
+    # types do not fit the data is a correctable input error, not a dead end, so the
+    # dataset returns to the schema step instead of terminating in FAILED.
+    DatasetState.NORMALIZING: frozenset(
+        {DatasetState.NORMALIZED, DatasetState.FAILED, DatasetState.PROFILED}
+    ),
     DatasetState.NORMALIZED: frozenset(),
     DatasetState.FAILED: frozenset(),
 }

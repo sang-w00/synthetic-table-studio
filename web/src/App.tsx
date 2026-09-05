@@ -634,7 +634,25 @@ export function App() {
       setGlobalStatus(`${rules.length}개 규칙을 컴파일하고 정규화를 완료했습니다.`);
       moveTo("mode");
     } catch (rulesError) {
-      setError(displayError(rulesError));
+      // A declared column type that does not fit the data reopens the dataset at the
+      // schema step (server sends reopened_to: "profiled"). Route the user back there
+      // and point at the offending column instead of leaving them on a dead end.
+      if (rulesError instanceof ApiProblem && rulesError.context.reopened_to === "profiled") {
+        const column = typeof rulesError.context.column === "string" ? rulesError.context.column : null;
+        if (column) setSchemaQuery(column);
+        setDatasetManifestSha(null);
+        // moveTo clears the error banner, so the reason is set after the move: the
+        // user needs the specific column and cast that failed, not just the step.
+        moveTo("schema");
+        setError(displayError(rulesError));
+        setGlobalStatus(
+          column
+            ? `'${column}' 열을 고친 뒤 다시 저장하세요.`
+            : "열 유형을 고친 뒤 다시 저장하세요.",
+        );
+      } else {
+        setError(displayError(rulesError));
+      }
     } finally {
       setBusy(false);
     }

@@ -54,7 +54,13 @@ EXPECTED_DATASET_TRANSITIONS = {
     DatasetState.PROFILING: {DatasetState.PROFILED, DatasetState.FAILED},
     DatasetState.PROFILED: {DatasetState.SCHEMA_READY},
     DatasetState.SCHEMA_READY: {DatasetState.NORMALIZING},
-    DatasetState.NORMALIZING: {DatasetState.NORMALIZED, DatasetState.FAILED},
+    # PROFILED is the reopen edge: a schema-invalid normalize returns the dataset to
+    # the editable schema step instead of terminating it.
+    DatasetState.NORMALIZING: {
+        DatasetState.NORMALIZED,
+        DatasetState.FAILED,
+        DatasetState.PROFILED,
+    },
     DatasetState.NORMALIZED: set(),
     DatasetState.FAILED: set(),
 }

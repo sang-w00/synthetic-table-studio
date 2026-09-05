@@ -346,20 +346,48 @@ def test_normalization_failure_is_retryable_and_validation_is_problem_json(
     failed = client.post(f"/api/v1/datasets/{dataset_id}/normalize")
     assert failed.status_code == 422
     assert failed.headers["content-type"].startswith("application/problem+json")
-    assert failed.json()["code"] == "SCHEMA_INVALID"
-    status_response = client.get(f"/api/v1/datasets/{dataset_id}")
-    assert status_response.json()["state"] == "failed"
-    assert status_response.json()["attempt"] == 1
+    problem = failed.json()
+    assert problem["code"] == "SCHEMA_INVALID"
+    # The message names the column and what to do about it, and the response says the
+    # dataset was reopened rather than terminated.
+    assert problem["context"]["column"] == "amount"
+    assert problem["context"]["reopened_to"] == "profiled"
+    assert "스키마 단계에서" in problem["detail"]
 
-    retried = client.post(f"/api/v1/datasets/{dataset_id}/retry")
-    assert retried.status_code == 202
-    assert retried.json()["state"] == "normalizing"
-    assert retried.json()["attempt"] == 2
+    # A column typed wrongly is the user's correctable mistake: the dataset returns to
+    # the schema step instead of dead-ending in FAILED, and retry does not apply.
+    status_response = client.get(f"/api/v1/datasets/{dataset_id}")
+    assert status_response.json()["state"] == "profiled"
+    assert status_response.json()["legal_actions"] == ["save_schema"]
 
     illegal_retry = client.post(f"/api/v1/datasets/{dataset_id}/retry")
     assert illegal_retry.status_code == 409
-    assert illegal_retry.headers["content-type"].startswith("application/problem+json")
     assert illegal_retry.json()["code"] == "INVALID_STATE"
+
+    # Saving rules before the schema is fixed names the state instead of dead-ending.
+    premature_rules = client.put(
+        f"/api/v1/datasets/{dataset_id}/rules",
+        json={"rules": []},
+    )
+    assert premature_rules.status_code == 409
+    assert premature_rules.json()["context"]["dataset_state"] == "profiled"
+
+    # Correcting the column type carries the dataset all the way through.
+    fixed = client.put(
+        f"/api/v1/datasets/{dataset_id}/schema",
+        json={"columns": _valid_schema()},
+    )
+    assert fixed.status_code == 200, fixed.text
+    assert fixed.json()["state"] == "schema_ready"
+    assert (
+        client.put(
+            f"/api/v1/datasets/{dataset_id}/rules", json={"rules": []}
+        ).status_code
+        == 200
+    )
+    normalized = client.post(f"/api/v1/datasets/{dataset_id}/normalize")
+    assert normalized.status_code == 202, normalized.text
+    assert normalized.json()["state"] == "normalized"
 
 
 @pytest.mark.asyncio

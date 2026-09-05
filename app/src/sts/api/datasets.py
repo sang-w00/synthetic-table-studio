@@ -662,7 +662,9 @@ class DatasetService:
         if record.state is not DatasetState.SCHEMA_READY:
             raise DomainError(
                 ErrorCode.INVALID_STATE,
-                "rules can only be saved after schema validation and before normalization",
+                "rules can only be saved after schema validation and before normalization; "
+                f"this dataset is currently {record.state.value}",
+                context={"dataset_state": record.state.value},
             )
         manifest = self.repository.get_dataset_manifest(dataset_id)
         compiled = compile_rules(
@@ -722,6 +724,13 @@ class DatasetService:
         try:
             record = self._run_normalize(dataset_id)
         except DomainError as exc:
+            # A column whose declared type does not fit the data is the user's mistake,
+            # not a dead end: reopen the dataset at the schema step, naming the column,
+            # instead of stranding it in FAILED with a misleading follow-up error.
+            if exc.code is ErrorCode.SCHEMA_INVALID and self._reopen_after_normalize(
+                dataset_id, exc
+            ):
+                raise self._schema_fix_error(exc) from exc
             self._fail(dataset_id, exc)
             raise
         except Exception as exc:
@@ -803,6 +812,43 @@ class DatasetService:
         )
         return RetryResponse(
             dataset_id=UUID(str(dataset_id)), state=record.state, attempt=record.attempt
+        )
+
+    def _reopen_after_normalize(self, dataset_id: UUID | str, error: DomainError) -> bool:
+        """Return a schema-invalid normalize to the editable PROFILED state.
+
+        Returns True when the dataset was reopened, False when it was not in a state
+        that can be reopened (in which case the caller falls back to failing it).
+        """
+
+        record = self.repository.get_dataset(dataset_id)
+        if record.state is not DatasetState.NORMALIZING:
+            return False
+        reopened = self.repository.transition_dataset(
+            dataset_id,
+            DatasetState.PROFILED,
+            expected_state=DatasetState.NORMALIZING,
+        )
+        self._emit(
+            dataset_id,
+            stage="normalize",
+            state=reopened.state,
+            terminal=False,
+            code="DATASET_SCHEMA_REOPENED",
+        )
+        return True
+
+    @staticmethod
+    def _schema_fix_error(error: DomainError) -> DomainError:
+        """Re-frame a normalize schema error as an actionable, recoverable one."""
+
+        column = error.problem.context.get("column")
+        target = f"'{column}' 열" if isinstance(column, str) and column else "해당 열"
+        return DomainError(
+            error.code,
+            f"{error.problem.detail} — {target}의 유형이나 결측 허용을 스키마 단계에서 "
+            "고치고 다시 정규화하세요.",
+            context={**dict(error.problem.context), "reopened_to": "profiled"},
         )
 
     def _fail(self, dataset_id: UUID | str, error: DomainError) -> None:
