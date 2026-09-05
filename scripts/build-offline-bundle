@@ -1,0 +1,117 @@
+#!/bin/sh
+# Build a self-contained bundle that runs on a machine with no Python, no Node,
+# no pip, no uv and no network.
+#
+# The bundle keeps this repository's four-environment layout intact, because that
+# separation is a privacy boundary and not an implementation detail: each worker
+# keeps its own locked dependency set, and the versions come from the committed
+# uv.lock files, so the supply chain the reports cite is the one that ships.
+#
+# Instead of virtualenvs, each `.venv/bin/python` becomes a small shell shim that
+# resolves the bundle root from its own location and execs a bundled interpreter
+# with the matching vendored packages on PYTHONPATH. Nothing hard-codes an
+# absolute path, so the tree runs wherever it is extracted.
+#
+# Requires (on the BUILD machine only): uv, npm, network access, ~15 GB free disk.
+# Build on the oldest target distribution you must support; the bundled wheels are
+# glibc- and architecture-specific.
+set -eu
+
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
+OUT=${1:-"$ROOT/var/offline-bundle"}
+ARCH=$(uname -m)
+STAGE="$OUT/synthetic-table-studio-offline-linux-$ARCH"
+
+PY311_TAG=3.11
+PY312_TAG=3.12
+
+echo "==> staging into $STAGE"
+rm -rf "$STAGE"
+mkdir -p "$STAGE"
+
+echo "==> building the web interface (build-time only; the bundle ships the output)"
+npm --prefix "$ROOT/web" ci
+npm --prefix "$ROOT/web" run build
+mkdir -p "$STAGE/web"
+cp -R "$ROOT/web/dist" "$STAGE/web/dist"
+rm -f "$STAGE"/web/dist/assets/*.map
+
+echo "==> copying application sources"
+for item in app/src scripts probes/results benchmarks/result-schema.json \
+            benchmarks/sample-column-map.example.json \
+            README.md CHANGELOG.md PROGRAM_REPORT.md CODE_REVIEW.md; do
+    mkdir -p "$STAGE/$(dirname "$item")"
+    cp -R "$ROOT/$item" "$STAGE/$item"
+done
+for worker in argn dpmm eval; do
+    mkdir -p "$STAGE/workers/$worker"
+    cp -R "$ROOT/workers/$worker/src" "$STAGE/workers/$worker/src"
+done
+
+echo "==> fetching relocatable CPython $PY311_TAG and $PY312_TAG"
+mkdir -p "$STAGE/python"
+uv python install --install-dir "$STAGE/python" "$PY311_TAG" "$PY312_TAG"
+PY311=$(echo "$STAGE"/python/cpython-$PY311_TAG.*/bin/python$PY311_TAG)
+PY312=$(echo "$STAGE"/python/cpython-$PY312_TAG.*/bin/python$PY312_TAG)
+
+echo "==> vendoring locked dependencies (versions come from uv.lock, not a fresh resolve)"
+vendor () { # $1=project dir  $2=vendor name  $3=interpreter
+    requirements="$OUT/requirements-$2.txt"
+    ( cd "$ROOT/$1" && uv export --frozen --no-hashes --no-dev --no-emit-project -o "$requirements" )
+    uv pip install --python "$3" --target "$STAGE/vendor/$2" -r "$requirements"
+}
+vendor app            app  "$PY312"
+vendor workers/argn   argn "$PY311"
+vendor workers/dpmm   dpmm "$PY311"
+vendor workers/eval   eval "$PY311"
+
+echo "==> writing relocatable interpreter shims"
+shim () { # $1=venv bin dir  $2=relative hops to root  $3=vendor name  $4=interpreter
+    mkdir -p "$1"
+    interpreter=${4#"$STAGE/"}
+    cat > "$1/python" <<EOF
+#!/bin/sh
+# Relocatable stand-in for a virtualenv interpreter: resolves the bundle root from
+# its own location, so this tree needs no installation and no fixed path.
+here=\$(CDPATH= cd -- "\$(dirname -- "\$0")" && pwd -P)
+root=\$(CDPATH= cd -- "\$here$2" && pwd -P)
+PYTHONPATH="\$root/vendor/$3\${PYTHONPATH:+:\$PYTHONPATH}"
+export PYTHONPATH
+exec "\$root/$interpreter" "\$@"
+EOF
+    chmod +x "$1/python"
+    ln -sf python "$1/python3"
+}
+shim "$STAGE/app/.venv/bin"          "/../../.."    app  "$PY312"
+shim "$STAGE/workers/argn/.venv/bin" "/../../../.." argn "$PY311"
+shim "$STAGE/workers/dpmm/.venv/bin" "/../../../.." dpmm "$PY311"
+shim "$STAGE/workers/eval/.venv/bin" "/../../../.." eval "$PY311"
+
+cat > "$STAGE/run.sh" <<'EOF'
+#!/bin/sh
+# Start Synthetic Table Studio. No installation, no network, no system Python.
+set -e
+root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+STS_SERVE_VENV=1
+export STS_SERVE_VENV
+exec "$root/app/.venv/bin/python" "$root/scripts/serve" \
+  --workspace "${STS_WORKSPACE:-$root/workspace}" \
+  --host "${STS_HOST:-127.0.0.1}" \
+  --port "${STS_PORT:-8765}" \
+  --skip-web-build "$@"
+EOF
+chmod +x "$STAGE/run.sh"
+
+find "$STAGE" -name "__pycache__" -type d -prune -exec rm -rf {} + 2>/dev/null || true
+
+echo "==> self-check"
+"$STAGE/app/.venv/bin/python" -c "import duckdb, pyarrow, fastapi, pydantic; print('  app   ok')"
+"$STAGE/workers/argn/.venv/bin/python" -c "import torch; print('  argn  ok', torch.__version__)"
+"$STAGE/workers/dpmm/.venv/bin/python" -c "import numpy, pandas; print('  dpmm  ok')"
+"$STAGE/workers/eval/.venv/bin/python" -c "import numpy, scipy, sklearn; print('  eval  ok')"
+
+echo "==> packaging"
+tar -C "$OUT" -czf "$STAGE.tar.gz" "$(basename "$STAGE")"
+echo "bundle:    $STAGE.tar.gz"
+echo "size:      $(du -h "$STAGE.tar.gz" | cut -f1) compressed, $(du -sh "$STAGE" | cut -f1) extracted"
+echo "sha256:    $(sha256sum "$STAGE.tar.gz" | cut -d' ' -f1)"

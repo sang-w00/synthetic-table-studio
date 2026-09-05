@@ -43,6 +43,29 @@ cd web && npm ci && cd ..
 - SBOM/integrity: `build/sbom/{dependencies,licenses,integrity}.json`
 - 엔진 계약 probe: `probes/results/{argn_contract,dpmm_contract}.json`
 
+## 오프라인 배포 (설치 없이 실행)
+
+인터넷이 없거나 Python·Node를 설치할 수 없는 우분투 장비에 전달할 때는 자체 포함 번들을
+만듭니다. 네트워크가 되는 같은 아키텍처의 리눅스 장비에서 한 번 빌드하면 됩니다.
+
+```bash
+./scripts/build-offline-bundle
+```
+
+결과물은 압축 해제 후 `./run.sh` 하나로 실행됩니다. 대상 장비에 필요한 것은 **glibc 2.28
+이상**뿐이며 Python, Node, pip, uv, 네트워크 모두 필요하지 않습니다.
+
+번들은 이 저장소의 네 환경 분리를 그대로 유지합니다. 그 분리는 구현 편의가 아니라
+프라이버시 경계이므로, 하나의 실행 파일로 합치지 않습니다. 각 `.venv/bin/python`은 번들
+위치를 스스로 찾아 해당 환경의 패키지만 `PYTHONPATH`에 올리는 셸 shim이며, 절대 경로를
+쓰지 않으므로 어디에 풀어도 동작합니다. 패키지 버전은 커밋된 `uv.lock`에서 나오므로
+보고서가 인용하는 공급망과 배포본이 일치합니다.
+
+x86_64 기준 실측 크기: **압축 3.2 GB / 해제 5.9 GB**. 이 중 2.7 GB가 `torch`가 요구하는
+NVIDIA CUDA 런타임입니다. GPU를 쓰지 않는 대상이라면 `workers/argn`을 CPU 전용 torch로
+고정해 1 GB 미만으로 줄일 수 있지만, 그러면 `workers/argn/uv.lock`과 SBOM·probe를 다시
+만들어야 하고 DP 공개 보고서에 실리는 `wheel_sha256`이 달라집니다.
+
 ## 실행
 
 프로덕션형 로컬 실행:
