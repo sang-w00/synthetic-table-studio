@@ -20,12 +20,16 @@
 
 ## 요구 환경
 
+소스에서 설치해 실행할 때의 요구 사항입니다. 미리 빌드된 오프라인 번들로 실행한다면
+아래 중 로컬 디스크 workspace만 해당하며, Python·Node·uv는 필요하지 않습니다
+([오프라인 배포](#오프라인-배포-설치-없이-실행) 참고).
+
 - macOS 또는 Linux
 - Python 3.11/3.12와 [uv](https://docs.astral.sh/uv/)
 - Node.js 22와 npm
 - 로컬 디스크 workspace. 네트워크 파일시스템은 fsync/rename 보장을 별도로 검증하기 전에는 사용하지 마십시오.
 
-## 설치
+## 설치 (소스에서)
 
 ```bash
 cd app && uv sync --frozen && cd ..
@@ -45,28 +49,83 @@ cd web && npm ci && cd ..
 
 ## 오프라인 배포 (설치 없이 실행)
 
-인터넷이 없거나 Python·Node를 설치할 수 없는 우분투 장비에 전달할 때는 자체 포함 번들을
-만듭니다. 네트워크가 되는 같은 아키텍처의 리눅스 장비에서 한 번 빌드하면 됩니다.
+인터넷이 없거나 Python·Node를 설치할 수 없는 리눅스 장비에서는 자체 포함 번들을 씁니다.
+압축을 풀고 `./run.sh` 하나로 실행되며, 대상 장비에 Python, Node, pip, uv, 네트워크가
+모두 필요하지 않습니다.
+
+### 1. 미리 빌드된 번들 내려받기 (Linux x86_64)
+
+- 파일: [`synthetic-table-studio-offline-linux-x86_64.tar.gz`](https://drive.google.com/file/d/1iSRH-q973CRnHk136-xNXyrBU2wHqAGg/view?usp=sharing) (3.1 GB, 해제 후 6.1 GB)
+- SHA-256: `39e6eedb71773f986c7fe7ddd51c4b234b55548efeb69c6be3e749b5cfca8627`
+- 요구 사항: x86_64, glibc 2.35 이상 (Ubuntu 22.04 이상)
+
+용량이 커서 Google Drive가 바이러스 검사를 건너뛴다는 안내를 표시합니다. 그대로
+내려받으면 됩니다. 대상 장비가 오프라인이면 네트워크가 되는 장비에서 받아 옮기십시오.
+
+내려받은 장비에서 무결성을 확인한 뒤 풉니다.
 
 ```bash
-./scripts/build-offline-bundle
+sha256sum synthetic-table-studio-offline-linux-x86_64.tar.gz
+# 위 SHA-256과 같은지 확인
+tar -xzf synthetic-table-studio-offline-linux-x86_64.tar.gz
+cd synthetic-table-studio-offline-linux-x86_64
 ```
 
-결과물은 압축 해제 후 `./run.sh` 하나로 실행됩니다. 대상 장비에 필요한 것은 **glibc 2.28
-이상**뿐이며 Python, Node, pip, uv, 네트워크 모두 필요하지 않습니다.
+이 번들은 aarch64 장비에서 x86_64 대상으로 교차 빌드했으므로 빌드 시점의 자체 점검이
+생략되어 있습니다. 처음 실행하기 전에 네 환경의 적재를 한 번 확인하십시오.
+
+```bash
+app/.venv/bin/python          -c "import duckdb, pyarrow, fastapi, pydantic; print('app ok')"
+workers/argn/.venv/bin/python -c "import torch; print('argn ok', torch.__version__)"
+workers/dpmm/.venv/bin/python -c "import numpy, pandas; print('dpmm ok')"
+workers/eval/.venv/bin/python -c "import numpy, scipy, sklearn; print('eval ok')"
+```
+
+### 2. 실행
+
+```bash
+./run.sh
+```
+
+브라우저에서 `http://127.0.0.1:8765`를 엽니다. 작업 폴더는 기본적으로 번들 안 `workspace/`가
+되며, 환경 변수로 바꿉니다.
+
+```bash
+STS_WORKSPACE=/data/studio STS_PORT=9000 STS_HOST=127.0.0.1 ./run.sh
+```
+
+`run.sh`는 loopback 기본값을 포함해 `scripts/serve`와 같은 보안 정책을 그대로 따릅니다.
+작업 폴더는 로컬 디스크에 두십시오.
+
+### 3. 직접 빌드하기
+
+다른 아키텍처·배포판이 필요하거나 공급망을 직접 재현하려면 네트워크가 되는 리눅스
+장비에서 빌드합니다. 지원해야 하는 가장 오래된 배포판에서 빌드하십시오.
+
+```bash
+./scripts/build-offline-bundle                       # 빌드 장비와 같은 아키텍처
+TARGET_ARCH=x86_64 ./scripts/build-offline-bundle    # 교차 빌드 (예: aarch64 → x86_64)
+```
+
+`TARGET_GLIBC`(기본 `2.35`)로 manylinux 태그를, `SKIP_WEB_BUILD=1`로 이미 빌드된
+`web/dist` 재사용을 지정할 수 있습니다. 교차 빌드에서는 대상 인터프리터를 실행할 수 없어
+빌드 시점 자체 점검이 생략되므로, 위 네 줄 점검을 대상 장비에서 수행하십시오.
+
+### 번들 구성과 크기
 
 번들은 이 저장소의 네 환경 분리를 그대로 유지합니다. 그 분리는 구현 편의가 아니라
 프라이버시 경계이므로, 하나의 실행 파일로 합치지 않습니다. 각 `.venv/bin/python`은 번들
 위치를 스스로 찾아 해당 환경의 패키지만 `PYTHONPATH`에 올리는 셸 shim이며, 절대 경로를
-쓰지 않으므로 어디에 풀어도 동작합니다. 패키지 버전은 커밋된 `uv.lock`에서 나오므로
-보고서가 인용하는 공급망과 배포본이 일치합니다.
+쓰지 않으므로 어디에 풀어도 동작합니다. 재배치 가능한 CPython 3.11·3.12와 빌드된 웹
+인터페이스가 함께 들어가고, 패키지 버전은 커밋된 `uv.lock`에서 나오므로 보고서가 인용하는
+공급망과 배포본이 일치합니다.
 
-x86_64 기준 실측 크기: **압축 3.2 GB / 해제 5.9 GB**. 이 중 2.7 GB가 `torch`가 요구하는
-NVIDIA CUDA 런타임입니다. GPU를 쓰지 않는 대상이라면 `workers/argn`을 CPU 전용 torch로
-고정해 1 GB 미만으로 줄일 수 있지만, 그러면 `workers/argn/uv.lock`과 SBOM·probe를 다시
-만들어야 하고 DP 공개 보고서에 실리는 `wheel_sha256`이 달라집니다.
+해제 후 6.1 GB 중 2.7 GB가 `torch`가 요구하는 NVIDIA CUDA 런타임입니다. GPU를 쓰지 않는
+대상이라면 `workers/argn`을 CPU 전용 torch로 고정해 1 GB 미만으로 줄일 수 있지만, 그러면
+`workers/argn/uv.lock`과 SBOM·probe를 다시 만들어야 하고 DP 공개 보고서에 실리는
+`wheel_sha256`이 달라집니다.
 
-## 실행
+## 실행 (소스에서)
 
 프로덕션형 로컬 실행:
 

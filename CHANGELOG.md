@@ -4,6 +4,9 @@
 
 ### Added
 
+- README에 오프라인 설치·실행 절차를 추가했습니다. 미리 빌드된 Linux x86_64 번들의 내려받기
+  링크와 SHA-256, 대상 장비 요구 사항(glibc 2.35 이상), 첫 실행 전 네 환경 적재 점검, 작업
+  폴더·포트 환경 변수, 직접 빌드(교차 빌드 포함) 절차를 담았습니다.
 - `scripts/build-offline-bundle`가 교차 빌드를 지원합니다. `TARGET_ARCH=x86_64`를 주면 aarch64 빌드
   머신에서도 대상 CPU용 인터프리터와 wheel을 실행 없이 내려받아 번들을 만들고(`TARGET_GLIBC`로
   manylinux 태그 선택), 자체 점검은 대상 장비에서 하도록 안내합니다. `SKIP_WEB_BUILD=1`로 이미
