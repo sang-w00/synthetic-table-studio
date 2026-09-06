@@ -55,7 +55,7 @@ tar -C "$ROOT/web" --exclude='*.map' -cf - dist | tar -C "$STAGE/web" -xf -
 echo "==> copying application sources"
 for item in app/src scripts probes/results benchmarks/result-schema.json \
             benchmarks/sample-column-map.example.json \
-            README.md CHANGELOG.md PROGRAM_REPORT.md; do
+            README.md CHANGELOG.md PROGRAM_REPORT.md LICENSE; do
     mkdir -p "$STAGE/$(dirname "$item")"
     tar -C "$ROOT" --exclude='__pycache__' -cf - "$item" | tar -C "$STAGE" -xf -
 done

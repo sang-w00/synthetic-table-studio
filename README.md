@@ -2,6 +2,8 @@
 
 대용량 CSV/XLSX를 로컬 디스크에서 스트리밍 처리하고, 규칙을 적용한 합성 데이터와 품질 보고서를 만드는 localhost 전용 웹 애플리케이션입니다. 브라우저는 원본 파일 전체를 메모리에 적재하지 않습니다.
 
+생성 모드는 두 가지입니다. **Utility 모드**는 통계적 유사성을 우선하며 형식적 개인정보 보호를 보장하지 않습니다. **형식적 DP 모드**는 행 단위 차등 프라이버시 예산 안에서 생성하고, 외부 공개용 보고서를 따로 발행합니다. 두 모드의 차이와 한계는 아래 절들과 프로그램 보고서에 정리되어 있습니다.
+
 일반 독자를 위한 기능·개인정보 보호·검증 결과 설명은 [재현자료 생성 프로그램 설명 및 개발 보고서](PROGRAM_REPORT.md)를 참고하십시오.
 
 ## 현재 보장 범위
@@ -13,10 +15,26 @@
 - 평가: 1차 품질 보고서와 별도 eval worker의 KS/TVD·결측률, 열 쌍, C2ST, downstream, Gower/Anonymeter 경험적 개인정보 진단, CSV/Parquet 내보내기, canonical content SHA-256
 - 보고서: 담당자용 HTML/JSON 보고서와 함께, 비전문가가 읽는 `쉬운 품질 보고서`를
   한글 문서(HWPX)로 발행합니다. 표준 라이브러리만으로 OWPML 패키지를 작성하며,
-  공개 안전 등급은 원본 보고서에서 상속합니다
+  공개 안전 등급은 원본 보고서에서 상속합니다.
 - 보안: loopback-only 기본값, Host/Origin 검사, 세션 쿠키, 경로 confinement, 원자적 publish
 
+### 형식적 DP 모드의 공개 경계
+
 잠긴 `dpmm==0.1.9` MST 경로는 행 단위 add/remove 인접성으로 동작합니다. 사용자가 사전에 공개되었다고 attest한 범주·bin 메타데이터만 `/api/v1/privacy/public-metadata`로 등록한 뒤 fit을 시작하며, checkpoint와 private fit RNG는 `trusted_curator_internal`, `downloadable=false`, `release_safe=false`로 유지합니다. fresh sample worker는 공개 `sampling_seed`로 RNG 상태를 교체합니다. DP 작업은 두 보고서를 분리합니다. 담당자용 `primary_report_*`는 원본·holdout 기반 품질과 경험적 개인정보 진단을 포함해 다운로드할 수 있지만 `release_safe=false`, `contains_private_source_information=true`입니다. 외부 공개용 `dp_release_report_*`는 ledger와 공개 출력 allowlist만 포함하며 `scope=dp_release`, `release_safe=true`, `contains_private_source_information=false`입니다.
+
+## 저장소 구성
+
+| 경로 | 내용 |
+| --- | --- |
+| `app/` | FastAPI 백엔드와 도메인 로직 (취입, 스키마, 규칙, 작업, 보고서, 개인정보 ledger) |
+| `workers/argn/` | 잠긴 utility 합성 worker |
+| `workers/dpmm/` | 잠긴 형식적 DP 합성 worker |
+| `workers/eval/` | 분리된 고급 평가 worker |
+| `web/` | React 사용자 화면과 Playwright 테스트 |
+| `scripts/` | 실행(`serve`), 검증(`verify`), SBOM(`build-sbom`), 오프라인 번들(`build-offline-bundle`) |
+| `tests/` | 단위·통합·system·contract 테스트 |
+| `probes/results/` | 엔진 계약 probe 결과 |
+| `benchmarks/` | 벤치마크 결과 스키마와 예시 설정 |
 
 ## 요구 환경
 
@@ -163,7 +181,6 @@ PYTHONPATH=workers/eval/src:app/src workers/eval/.venv/bin/python -m pytest -q \
 app/.venv/bin/ruff format --check app/src tests scripts/serve scripts/verify
 app/.venv/bin/ruff check app/src tests scripts/serve scripts/verify
 cd web && npm run typecheck && npm run lint && npm run build && npm run test:e2e
-
 ```
 
 Playwright는 Chromium, Firefox, WebKit에서 동일한 mock-backed six-step 흐름과 DP release 복구를 검증합니다.
@@ -175,13 +192,16 @@ cd web
 STS_BASE_URL=http://127.0.0.1:8765 npx playwright test --config playwright.real.config.ts
 ```
 
-M4 sample gate(승인된 sample SHA/크기/행/열을 모두 확인):
+아래 두 gate의 `m4`는 개발 검증에 쓴 장비(Apple M4 Pro)를 가리키는 이름이며,
+`scripts/verify`의 하위 명령 이름에 그대로 쓰입니다. production 장비 검증과는 구분됩니다.
+
+sample gate(승인된 sample SHA/크기/행/열을 모두 확인):
 
 ```bash
 STS_SAMPLE_CSV=/absolute/path/to/sample.csv ./scripts/verify sample-m4
 ```
 
-M4 scale gate(기본 2,000,000×70, 1 GiB DuckDB 한도, spill 필수):
+scale gate(기본 2,000,000×70, 1 GiB DuckDB 한도, spill 필수):
 
 ```bash
 ./scripts/verify scale-m4
@@ -199,3 +219,11 @@ capacity estimate는 production capacity proof가 아닙니다.
 - worker stdout은 비어 있어야 하며 request/result/events JSON 파일만 프로토콜로 사용합니다.
 - resource admission은 disk ceiling과 worker RSS lease를 보수적으로 예약합니다.
 - L40S 48 GB ×4 production gate는 해당 host에서 별도 실행해야 합니다. M4 결과만으로 55M×70 production readiness를 선언하지 마십시오.
+
+## 라이선스
+
+[MIT License](LICENSE). 저작권 표시와 라이선스 전문을 포함하면 상업적 이용을 포함해
+자유롭게 사용, 수정, 배포할 수 있습니다.
+
+번들과 각 worker가 포함하는 서드파티 패키지는 각자의 라이선스를 따릅니다. 목록은
+`./scripts/build-sbom`이 만드는 `build/sbom/licenses.json`에서 확인할 수 있습니다.
