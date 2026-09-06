@@ -32,3 +32,6 @@ build/tmp/
 # Local benchmark run records and the local file's own column headers
 benchmarks/results/*.json
 benchmarks/sample-column-map.json
+
+# 내부 리뷰 메모는 저장소에 올리지 않습니다
+CODE_REVIEW.md

@@ -30,7 +30,7 @@ MIN_CANDIDATE_ROWS = 10_000
 MAX_CANDIDATE_ROWS = 250_000
 MAX_BOUNDED_TRAINING_ROWS = 5_000_000
 MAX_TRAINING_COLUMNS = 70
-# The authoritative M4 Phase 0 gate has no CUDA devices, so clone fan-out is disabled locally.
+# The Apple-silicon development environment has no CUDA devices, so clone fan-out is disabled locally.
 MULTIPROCESS_CLONES_ENABLED = False
 
 _SHA256_LENGTH = 64

@@ -273,7 +273,8 @@ Apple M4 Pro 환경에서는 승인된 약 99만 행 표본과 200만 행×70열
 
 현재 코드에 대해 다음 검증을 수행했습니다.
 
-- 백엔드 unit·integration·system 테스트: 207건 통과
+- 백엔드 unit·integration 테스트: 211건 통과
+- system 테스트: 7건. 34 GB 이상의 작업 디스크 여유가 있는 장비에서 실행합니다
 - 고급 평가 contract 테스트: 7건 통과
 - 실제 ARGN CSV 학습·생성·보고서 경로 확인
 - 실제 DPMM MST fit·sample·ledger·release 경로 확인

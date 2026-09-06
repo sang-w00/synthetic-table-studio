@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 - 2026-09-06
 
 ### Added
 
@@ -16,10 +16,9 @@
 - `scripts/build-offline-bundle`이 Python·Node·pip·uv·네트워크가 전혀 없는 리눅스 장비에서
   압축 해제 후 `./run.sh`만으로 실행되는 자체 포함 번들을 만듭니다. 네 환경 분리를 유지한
   채 각 `.venv/bin/python`을 번들 위치를 스스로 찾는 셸 shim으로 대체하고, 재배치 가능한
-  CPython 3.11·3.12와 `uv.lock` 기준 패키지를 함께 넣습니다. x86_64에서 압축 3.2 GB,
-  해제 5.9 GB로 실측했고 네트워크 네임스페이스에서 외부 연결이 완전히 차단된 상태로
+  CPython 3.11·3.12와 `uv.lock` 기준 패키지를 함께 넣습니다. x86_64에서 압축 3.1 GB,
+  해제 6.1 GB로 실측했고 네트워크 네임스페이스에서 외부 연결이 완전히 차단된 상태로
   기동·서빙을 확인했습니다.
-
 - 모든 성공한 작업이 비전문가용 `쉬운 품질 보고서`를 한글 문서(HWPX)로 함께 발행합니다.
   결론과 구조·분포 판정, 핵심 지표 표, 먼저 확인할 열, 개인정보 보호 설명, 해석 주의사항,
   용어 해설을 담습니다. 표준 라이브러리만으로 OWPML 패키지를 직접 작성하므로 새 의존성이
@@ -62,7 +61,6 @@
   표시; 중복 live region 제거; `vite` 개발 서버 `/api` 프록시.
 - openpyxl 변환 경로에도 DOCTYPE·엔티티 선언 가드를 적용합니다.
 - Playwright spec 5건을 현재 UI에 맞춰 갱신했고, `eslint-plugin-react-hooks`를 활성화했습니다.
-
 - 열 유형을 잘못 지정해 정규화가 실패하면 데이터셋이 `failed`로 끝나 버려 되돌릴 수 없었고,
   사용자가 다시 시도하면 `INVALID_STATE: rules can only be saved after schema validation and
   before normalization`이라는 원인과 무관한 오류만 보였습니다. 이제 캐스팅 실패는 사용자가
@@ -70,7 +68,6 @@
   열 이름과 해야 할 일을 오류 메시지에 담습니다. 화면도 스키마 단계로 돌아가 해당 열만
   필터링해 보여주므로, 유형을 고쳐 저장하면 그대로 정규화까지 이어집니다. 디스크 부족 같은
   실행 오류는 예전처럼 `failed`로 남아 재시도 대상입니다.
-
 - DP 공개 보고서가 누적 개인정보 예산을 실제로 계산합니다. 이전에는 `release_count`가 상수
   `1`이라, 같은 원본으로 ε=1짜리 작업을 세 번 돌려도 모든 보고서가 "누적 공개 1회"라고
   말했습니다. 이제 privacy scope 안에서 원본을 건드린 모든 실행(공개하지 않은 것 포함)을
@@ -82,7 +79,6 @@
   `rule_postprocessing`, `limitations`)을 예약 시점에 기록합니다. 메커니즘 신원은 검증된
   probe 결과에서 읽고, probe에 없는 값은 추측하지 않고 생략합니다. 외부 독자가 어떤 wheel과
   어떤 ε·δ → zCDP ρ 변환이 그 보장을 만들었는지 확인할 수 있습니다.
-
 - 한쪽 열만 상수인 경우 KS·TVD 거리를 실제 값 대신 최댓값 1.0으로 보고하던 문제를
   고쳤습니다. 해당 열이 baseline-excess 집계와 "우선 확인할 열"을 부당하게 지배했습니다.
 - `malformed="skip"`으로 취입한 자료가 정규화 단계에서 항상 거부되던 문제를 고쳤습니다.
@@ -124,30 +120,30 @@
 
 ### Added
 
-- Localhost-only six-step React workflow for CSV/XLSX upload, schema/rules, synthesis, progress, reports, and downloads.
-- Disk-streaming ingestion and Parquet normalization with resumable uploads and atomic publication.
-- Typed eight-rule compiler, deterministic transforms, full validation, and bounded residual rejection.
-- Locked MOSTLY AI ARGN utility worker with deterministic bounded fit/generation and fresh-process checkpoint loading.
-- Ledger-reserved DPMM MST fit/sample application path with public metadata admission, fresh-process sampling, and release-only artifact allowlisting.
-- Primary and isolated advanced evaluation, release-safety filtering, canonical content hashes, and CSV/Parquet exports.
-- M4 sample and 2M×70 scale verification harnesses, SBOM/integrity manifests, and real-backend Playwright smoke tests.
+- CSV/XLSX 업로드, 스키마·규칙, 합성, 진행 상황, 보고서, 다운로드로 이어지는 localhost 전용 6단계 React 워크플로.
+- 재개 가능한 업로드와 원자적 publish를 갖춘 디스크 스트리밍 취입과 Parquet 정규화.
+- 8종 규칙의 타입 검사 컴파일러, 결정적 변환, 전수 검증, 상한이 있는 잔여 거절.
+- 잠긴 MOSTLY AI ARGN utility worker. 결정적이고 상한이 있는 fit·generate와 새 프로세스에서의 checkpoint 적재를 사용합니다.
+- ledger로 예산을 예약하는 DPMM MST fit·sample 경로. 공개 메타데이터 admission, 새 프로세스 sampling, 공개 산출물 allowlist를 적용합니다.
+- 1차 평가와 분리된 고급 평가, 공개 안전성 필터링, canonical content 해시, CSV/Parquet 내보내기.
+- 표본 및 200만 행×70열 규모 검증 harness, SBOM·integrity manifest, 실제 백엔드 Playwright smoke 테스트.
 
 ### Changed
 
-- Replaced setup-oriented interface copy with a direct data-to-report workflow, explicit utility/DP boundaries, and workload-specific epoch/model guidance.
-- High-cardinality identifier candidates are now surfaced for confirmation, excluded columns stay out of model input, and generated identifiers are reconstructed deterministically after bounded rejection.
+- 설정 위주였던 화면 문구를 자료에서 보고서까지 곧바로 이어지는 흐름으로 바꾸고, utility와 DP의 경계, 작업별 epoch·모델 안내를 명시했습니다.
+- 고유값이 많은 식별자 후보를 확인받도록 드러내고, 제외한 열은 모델 입력에서 빠지며, 생성된 식별자는 상한이 있는 거절 이후 결정적으로 재구성합니다.
 - Utility 보고서와 담당자용 DP 보고서는 생성 행, 규칙 검증, KS/TVD·결측률, 열 쌍, C2ST, downstream utility, Gower/Anonymeter 경험적 개인정보 진단을 한국어 자연어로 먼저 설명하고 기계 판독 지표를 부록으로 유지합니다. DP 외부 공개 보고서는 별도 allowlist 산출물로 유지합니다.
-- Reclassified the DPMM checkpoint and serialized fit RNG as non-downloadable trusted-curator state, while proving that fresh-process generation replaces it with an explicit public sampling seed.
-- Added schema search/review filtering, mode-aware DP release reports, accessible live progress text, and Chromium/Firefox/WebKit workflow coverage.
-- Split ECharts into a lazy report-only chunk, reducing the main production bundle below 500 kB.
+- DPMM checkpoint와 직렬화된 fit RNG를 다운로드 불가한 trusted-curator 상태로 재분류하고, 새 프로세스 생성이 이를 공개 `sampling_seed`로 대체함을 확인했습니다.
+- 스키마 검색·검토 필터, 모드에 따른 DP 공개 보고서, 접근성 있는 진행 상황 안내, Chromium·Firefox·WebKit 워크플로 검증을 추가했습니다.
+- ECharts를 보고서 화면에서만 내려받는 지연 chunk로 분리해 기본 production bundle을 500 kB 아래로 줄였습니다.
 
-### Verified
+### 검증
 
-- Approved sample: SHA-256 `a268757667274304004d201726053d642c16b8ee5332a7045b2ae713aa7d9dd3`, 989,502 rows, 21 columns.
-- Real ARGN sample path: 50,000 training rows, 5 epochs, exactly 100,000 synthetic rows with all configured rules satisfied.
-- Scale control: 2,000,000×70 under a 1 GiB DuckDB limit with observed spill and equivalent Parquet/CSV decoded content hashes.
+- 승인된 원본 표본으로 취입·정규화·합성·평가 전 구간을 검증했습니다.
+- 실제 ARGN 표본 경로: 학습 50,000행, 5 epoch, 정확히 100,000행 생성, 설정한 규칙 전부 충족.
+- 규모 통제: DuckDB 1 GiB 제한에서 200만 행×70열, spill 발생 확인, Parquet과 CSV의 디코딩 후 content 해시 일치.
 
-### Known limitations
+### 알려진 한계
 
-- No production L40S capacity result is included; that gate requires the designated NVIDIA L40S 48 GB ×4 host.
-- ARF and ForestFlow are not pinned in this repository, so three-engine/three-seed non-inferiority is reported as unavailable rather than inferred.
+- production L40S 처리 능력 결과는 포함되어 있지 않습니다. 해당 검증에는 지정된 NVIDIA L40S 48 GB 4장 장비가 필요합니다.
+- ARF와 ForestFlow는 이 저장소에 고정되어 있지 않으므로, 3개 엔진·3개 seed 비열등성은 추정하지 않고 확인 불가로 보고합니다.
