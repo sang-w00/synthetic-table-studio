@@ -4,6 +4,12 @@
 
 ### Added
 
+- `scripts/build-offline-bundle`가 교차 빌드를 지원합니다. `TARGET_ARCH=x86_64`를 주면 aarch64 빌드
+  머신에서도 대상 CPU용 인터프리터와 wheel을 실행 없이 내려받아 번들을 만들고(`TARGET_GLIBC`로
+  manylinux 태그 선택), 자체 점검은 대상 장비에서 하도록 안내합니다. `SKIP_WEB_BUILD=1`로 이미
+  빌드된 `web/dist`를 재사용할 수 있고, 하드링크·대소문자 구분·삭제가 제한된 공유 마운트에서도
+  스테이징이 실패하지 않도록 인터프리터를 임시 디렉터리 경유로 복사하고 `__pycache__`는
+  복사 단계에서 제외합니다.
 - `scripts/build-offline-bundle`이 Python·Node·pip·uv·네트워크가 전혀 없는 리눅스 장비에서
   압축 해제 후 `./run.sh`만으로 실행되는 자체 포함 번들을 만듭니다. 네 환경 분리를 유지한
   채 각 `.venv/bin/python`을 번들 위치를 스스로 찾는 셸 shim으로 대체하고, 재배치 가능한

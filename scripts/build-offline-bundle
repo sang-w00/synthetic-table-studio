@@ -15,55 +15,96 @@
 # Requires (on the BUILD machine only): uv, npm, network access, ~15 GB free disk.
 # Build on the oldest target distribution you must support; the bundled wheels are
 # glibc- and architecture-specific.
+#
+# Cross-building: set TARGET_ARCH (e.g. x86_64) to build for a different CPU
+# architecture than the build machine. uv then downloads the interpreter and
+# wheels for the target without executing them, so the self-check is skipped and
+# must be run on a target machine (`run.sh --help` and `scripts/verify`).
+# TARGET_GLIBC (default 2.35 = Ubuntu 22.04) picks the manylinux tag.
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
 OUT=${1:-"$ROOT/var/offline-bundle"}
-ARCH=$(uname -m)
+HOST_ARCH=$(uname -m)
+ARCH=${TARGET_ARCH:-$HOST_ARCH}
+TARGET_GLIBC=${TARGET_GLIBC:-2.35}
+CROSS=0
+[ "$ARCH" != "$HOST_ARCH" ] && CROSS=1
 STAGE="$OUT/synthetic-table-studio-offline-linux-$ARCH"
 
 PY311_TAG=3.11
 PY312_TAG=3.12
 
 echo "==> staging into $STAGE"
-rm -rf "$STAGE"
+if [ -e "$STAGE" ]; then
+    rm -rf "$STAGE" || { echo "cannot remove the previous stage $STAGE; move it away first" >&2; exit 1; }
+fi
 mkdir -p "$STAGE"
 
-echo "==> building the web interface (build-time only; the bundle ships the output)"
-npm --prefix "$ROOT/web" ci
-npm --prefix "$ROOT/web" run build
+if [ "${SKIP_WEB_BUILD:-0}" = 1 ] && [ -f "$ROOT/web/dist/index.html" ]; then
+    echo "==> using the existing web build in web/dist (SKIP_WEB_BUILD=1)"
+else
+    echo "==> building the web interface (build-time only; the bundle ships the output)"
+    npm --prefix "$ROOT/web" ci
+    npm --prefix "$ROOT/web" run build
+fi
 mkdir -p "$STAGE/web"
-cp -R "$ROOT/web/dist" "$STAGE/web/dist"
-rm -f "$STAGE"/web/dist/assets/*.map
+# Source maps stay out of the bundle (copied selectively rather than deleted afterwards).
+tar -C "$ROOT/web" --exclude='*.map' -cf - dist | tar -C "$STAGE/web" -xf -
 
 echo "==> copying application sources"
 for item in app/src scripts probes/results benchmarks/result-schema.json \
             benchmarks/sample-column-map.example.json \
             README.md CHANGELOG.md PROGRAM_REPORT.md CODE_REVIEW.md; do
     mkdir -p "$STAGE/$(dirname "$item")"
-    cp -R "$ROOT/$item" "$STAGE/$item"
+    tar -C "$ROOT" --exclude='__pycache__' -cf - "$item" | tar -C "$STAGE" -xf -
 done
 for worker in argn dpmm eval; do
-    mkdir -p "$STAGE/workers/$worker"
-    cp -R "$ROOT/workers/$worker/src" "$STAGE/workers/$worker/src"
+    tar -C "$ROOT" --exclude='__pycache__' -cf - "workers/$worker/src" | tar -C "$STAGE" -xf -
 done
 
 echo "==> fetching relocatable CPython $PY311_TAG and $PY312_TAG"
 mkdir -p "$STAGE/python"
-uv python install --install-dir "$STAGE/python" "$PY311_TAG" "$PY312_TAG"
+# The interpreter archives contain hard links, which some filesystems (network or
+# shared mounts) refuse, so unpack into a scratch dir and copy the tree over.
+PYTMP=$(mktemp -d "${TMPDIR:-/tmp}/sts-python.XXXXXX")
+if [ "$CROSS" = 1 ]; then
+    echo "    cross-build: host $HOST_ARCH -> target $ARCH (glibc $TARGET_GLIBC)"
+    uv python install --install-dir "$PYTMP" \
+        "cpython-$PY311_TAG-linux-$ARCH-gnu" "cpython-$PY312_TAG-linux-$ARCH-gnu"
+else
+    uv python install --install-dir "$PYTMP" "$PY311_TAG" "$PY312_TAG"
+fi
+# share/terminfo has entries differing only by case, which a case-insensitive
+# staging filesystem cannot hold; the interpreter does not need it (nor man pages).
+for dir in "$PYTMP"/cpython-*.*.*-*; do   # versioned dirs only, not uv's minor-version links
+    tar -C "$PYTMP" --exclude='share/terminfo' --exclude='share/man' -cf - "$(basename "$dir")" \
+        | tar -C "$STAGE/python" -xf -
+done
+rm -rf "$PYTMP"
 PY311=$(echo "$STAGE"/python/cpython-$PY311_TAG.*/bin/python$PY311_TAG)
 PY312=$(echo "$STAGE"/python/cpython-$PY312_TAG.*/bin/python$PY312_TAG)
+[ -f "$PY311" ] && [ -f "$PY312" ] || { echo "interpreter download failed" >&2; exit 1; }
 
 echo "==> vendoring locked dependencies (versions come from uv.lock, not a fresh resolve)"
-vendor () { # $1=project dir  $2=vendor name  $3=interpreter
+vendor () { # $1=project dir  $2=vendor name  $3=interpreter  $4=python version
     requirements="$OUT/requirements-$2.txt"
     ( cd "$ROOT/$1" && uv export --frozen --no-hashes --no-dev --no-emit-project -o "$requirements" )
-    uv pip install --python "$3" --target "$STAGE/vendor/$2" -r "$requirements"
+    if [ "$CROSS" = 1 ]; then
+        # Resolve for the target without running it: binary wheels only, tagged for
+        # the target CPU and the oldest glibc the bundle must support.
+        uv pip install --python-version "$4" \
+            --python-platform "$ARCH-manylinux_${TARGET_GLIBC%%.*}_${TARGET_GLIBC#*.}" \
+            --only-binary :all: --no-compile-bytecode \
+            --target "$STAGE/vendor/$2" -r "$requirements"
+    else
+        uv pip install --python "$3" --target "$STAGE/vendor/$2" -r "$requirements"
+    fi
 }
-vendor app            app  "$PY312"
-vendor workers/argn   argn "$PY311"
-vendor workers/dpmm   dpmm "$PY311"
-vendor workers/eval   eval "$PY311"
+vendor app            app  "$PY312" "$PY312_TAG"
+vendor workers/argn   argn "$PY311" "$PY311_TAG"
+vendor workers/dpmm   dpmm "$PY311" "$PY311_TAG"
+vendor workers/eval   eval "$PY311" "$PY311_TAG"
 
 echo "==> writing relocatable interpreter shims"
 shim () { # $1=venv bin dir  $2=relative hops to root  $3=vendor name  $4=interpreter
@@ -102,13 +143,15 @@ exec "$root/app/.venv/bin/python" "$root/scripts/serve" \
 EOF
 chmod +x "$STAGE/run.sh"
 
-find "$STAGE" -name "__pycache__" -type d -prune -exec rm -rf {} + 2>/dev/null || true
-
-echo "==> self-check"
-"$STAGE/app/.venv/bin/python" -c "import duckdb, pyarrow, fastapi, pydantic; print('  app   ok')"
-"$STAGE/workers/argn/.venv/bin/python" -c "import torch; print('  argn  ok', torch.__version__)"
-"$STAGE/workers/dpmm/.venv/bin/python" -c "import numpy, pandas; print('  dpmm  ok')"
-"$STAGE/workers/eval/.venv/bin/python" -c "import numpy, scipy, sklearn; print('  eval  ok')"
+if [ "$CROSS" = 1 ]; then
+    echo "==> self-check skipped (cross-build); on a $ARCH machine run: $(basename "$STAGE")/run.sh --help"
+else
+    echo "==> self-check"
+    "$STAGE/app/.venv/bin/python" -c "import duckdb, pyarrow, fastapi, pydantic; print('  app   ok')"
+    "$STAGE/workers/argn/.venv/bin/python" -c "import torch; print('  argn  ok', torch.__version__)"
+    "$STAGE/workers/dpmm/.venv/bin/python" -c "import numpy, pandas; print('  dpmm  ok')"
+    "$STAGE/workers/eval/.venv/bin/python" -c "import numpy, scipy, sklearn; print('  eval  ok')"
+fi
 
 echo "==> packaging"
 tar -C "$OUT" -czf "$STAGE.tar.gz" "$(basename "$STAGE")"
