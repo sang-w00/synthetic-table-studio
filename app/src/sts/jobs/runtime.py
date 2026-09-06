@@ -76,6 +76,7 @@ from sts.reports import (
 from sts.rules.execution import (
     StructuralCodecs,
     attach_candidate_indices,
+    build_public_codecs,
     prepare_model_batch,
     repair_and_validate_candidate,
 )
@@ -489,6 +490,15 @@ class UtilityJobRuntime:
         record = self._advance(record, JobState.FITTING)
         fit_execution = await self._run_worker(record, fit_request, "fit")
         self._require_worker_success(fit_execution)
+        # The worker commits to its private fit RNG (a domain-separated hash of the
+        # entropy, never the entropy itself); the ledger carries that commitment so a
+        # later dispute about which RNG produced a released model can be settled.
+        rng_policy = fit_execution.result.resource_usage.get("rng_policy")
+        if not isinstance(rng_policy, dict) or not rng_policy.get("commitment_sha256"):
+            raise DomainError(
+                ErrorCode.WORKER_FAILED,
+                "dpmm worker did not report a private fit RNG commitment",
+            )
         checkpoint = self.workspace.resolve_relative(
             fit_request.limits["dpmm"]["checkpoint_path"], require_exists=True
         )
@@ -599,6 +609,11 @@ class UtilityJobRuntime:
         staged = await asyncio.to_thread(
             self._stage_exports, record, request, compiled, output_path, evaluation
         )
+        # Last point at which cancelling is honest. Once the ledger records the release
+        # the budget is spent against a public output, so the remaining steps must run
+        # to completion: a job reported CANCELLED with release-safe artifacts already
+        # published would misstate what actually happened.
+        self._check_cancelled(record)
         released = self.repository.transition_ledger_run(
             plan_metadata["ledger_run_id"], LedgerRunState.RELEASED, model_id=uuid4()
         )
@@ -616,6 +631,7 @@ class UtilityJobRuntime:
             "delta_total": composition["delta_total"],
             "spent_runs": composition["spent_runs"],
             "release_count": composition["release_count"],
+            "rng_policy": rng_policy,
         }
         artifacts = await asyncio.to_thread(
             self._publish_exports, record, staged, release_safe=True
@@ -644,7 +660,7 @@ class UtilityJobRuntime:
             limitations=limitations,
         )
         await self._publish_report_bundle(release_report, job_id=job_id, attempt=record.attempt)
-        record = self._advance(record, JobState.PUBLISHING)
+        record = self._advance(record, JobState.PUBLISHING, honour_cancellation=False)
         self.repository.set_resume_boundary(job_id, "completed_export")
         succeeded = self.repository.transition_job(
             job_id, JobState.SUCCEEDED, expected_state=JobState.PUBLISHING
@@ -726,8 +742,14 @@ class UtilityJobRuntime:
         row_start: int,
     ) -> tuple[pq.ParquetWriter, int]:
         candidate = attach_candidate_indices(pa.Table.from_pylist(rows), row_start=row_start)
+        # The public codebook materializes every column, so fixed-combination and
+        # compare rules are validated directly against public tuples rather than
+        # decoded from an ARGN latent that does not exist on this path.
         repaired = repair_and_validate_candidate(
-            candidate, compiled, codecs=StructuralCodecs(fixed_tuples={})
+            candidate,
+            compiled,
+            codecs=build_public_codecs(compiled),
+            materialized=True,
         )
         if repaired.report.violation_union_count:
             raise DomainError(
@@ -924,8 +946,11 @@ class UtilityJobRuntime:
             )
         return manifests
 
-    def _advance(self, record: JobRecord, target: JobState) -> JobRecord:
-        self._check_cancelled(record)
+    def _advance(
+        self, record: JobRecord, target: JobState, *, honour_cancellation: bool = True
+    ) -> JobRecord:
+        if honour_cancellation:
+            self._check_cancelled(record)
         updated = self.repository.transition_job(record.job_id, target, expected_state=record.state)
         self.service._emit(
             record.job_id,
@@ -1336,7 +1361,7 @@ class UtilityJobRuntime:
         compiled: CompiledRules,
         output_path: Path,
     ) -> tuple[dict[str, Any], dict[str, SnapshotFile]]:
-        codecs = StructuralCodecs(fixed_tuples={})
+        codecs = build_public_codecs(compiled)
         exact = exact_full_scan(
             output_path,
             expected_columns=compiled.columns,

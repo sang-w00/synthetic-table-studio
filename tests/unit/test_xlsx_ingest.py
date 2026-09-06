@@ -424,3 +424,30 @@ def test_failed_conversion_removes_partial_parquet(tmp_path: Path) -> None:
     assert error.value.code == ErrorCode.SCHEMA_INVALID
     assert not output.exists()
     assert not [path for path in os.scandir(tmp_path) if path.name.endswith(".part")]
+
+
+def test_entity_declaration_in_any_xml_part_is_refused_before_openpyxl_parses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The preflight guards the parts it parses itself; the conversion hands the whole
+    package to openpyxl, so an entity hidden in a part the preflight never opens must be
+    refused before openpyxl is even called."""
+
+    source = _workbook(tmp_path / "book.xlsx", {"Data": [["a", "b"], [1, 2]]})
+    payload = (
+        b'<?xml version="1.0"?><!DOCTYPE x [<!ENTITY a "aaaaaaaaaa">'
+        b'<!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;">]><cp:coreProperties '
+        b'xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties">'
+        b"<cp:keywords>&b;</cp:keywords></cp:coreProperties>"
+    )
+    _append_member(source, "customXml/item1.xml", payload)
+
+    loader_calls: list[Any] = []
+    monkeypatch.setattr(
+        xlsx, "load_workbook", lambda **kwargs: loader_calls.append(kwargs)
+    )
+    with pytest.raises(DomainError) as error:
+        convert_xlsx_to_raw_parquet(source, tmp_path / "out.parquet")
+    _assert_unsafe(error, "PACKAGE_STRUCTURE")
+    assert error.value.problem.context["member"] == "customXml/item1.xml"
+    assert loader_calls == []

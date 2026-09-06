@@ -6,6 +6,34 @@ const JOB_TWO = "33333333-3333-4333-8333-333333333333";
 const MANIFEST_SHA = "a".repeat(64);
 const LARGE_LOGICAL_SIZE = 64 * 1024 * 1024 + 17;
 
+// GET /api/v1/bootstrap returns the host inventory and resource plan; an empty body is
+// rejected by the client as BOOTSTRAP_EMPTY_RESPONSE.
+const BOOTSTRAP_BODY = {
+  status: "ready",
+  host_resources: {
+    platform_system: "Darwin",
+    platform_machine: "arm64",
+    logical_cpu_count: 10,
+    total_memory_bytes: 32 * 1024 ** 3,
+    available_memory_bytes: 16 * 1024 ** 3,
+    disk_total_bytes: 1024 ** 4,
+    disk_free_bytes: 512 * 1024 ** 3,
+    gpu_backend: "none",
+    gpu_device_count: 0,
+    gpu_name: null,
+    gpu_memory_total_bytes: null,
+  },
+  resource_plan: {
+    resource_profile: "auto_cpu",
+    recommended_device: "cpu",
+    worker_lease_bytes: 8 * 1024 ** 3,
+    utility_max_rows: 250_000,
+    duckdb_memory_limit_bytes: 4 * 1024 ** 3,
+    max_concurrent_jobs: 1,
+    disk_free_bytes: 512 * 1024 ** 3,
+  },
+};
+
 interface MockState {
   sourceFormat: "csv" | "xlsx";
   offsets: number[];
@@ -72,7 +100,7 @@ async function mockStudioApi(page: Page, sourceFormat: "csv" | "xlsx"): Promise<
     const method = request.method();
 
     if (path === "/api/v1/bootstrap") {
-      await route.fulfill({ status: 204, headers: { "Set-Cookie": "sts_session=test; HttpOnly; SameSite=Strict; Path=/" } });
+      await route.fulfill({ status: 200, contentType: "application/json", headers: { "Set-Cookie": "sts_session=test; HttpOnly; SameSite=Strict; Path=/" }, body: JSON.stringify(BOOTSTRAP_BODY) });
       return;
     }
     if (path === "/api/v1/datasets" && method === "GET") {
@@ -247,6 +275,12 @@ async function mockStudioApi(page: Page, sourceFormat: "csv" | "xlsx"): Promise<
           version: "1.0",
           report_kind: "utility_primary",
           narrative: ["The downloadable report includes a metric-based narrative."],
+          executive_summary: {
+            overall_conclusion: "요청한 100,000행을 모두 생성했고 강제 규칙 위반 없이 구조 검증을 통과했습니다.",
+            quality: { heading: "재현 품질", paragraphs: ["행 수와 규칙: 요청 100,000행과 생성 100,000행이 일치합니다."] },
+            privacy: { heading: "프라이버시 보호", paragraphs: ["이 일반 합성 결과에는 형식적 차등프라이버시 보장은 없습니다."] },
+            limitations: ["품질 지표에는 보편적인 합격 기준이 없습니다."],
+          },
           evaluation: {
             summary: { requested_rows: 100000, actual_rows: 100000, median_excess: 0.021, p95_excess: 0.074 },
             columns: [
@@ -267,6 +301,7 @@ async function mockStudioApi(page: Page, sourceFormat: "csv" | "xlsx"): Promise<
           artifacts: [
             { artifact_id: "44444444-4444-4444-8444-444444444444", kind: "synthetic_parquet_zip", size_bytes: 845102, downloadable: true, release_safe: false, contains_private_source_information: false },
             { artifact_id: "55555555-5555-4555-8555-555555555555", kind: "primary_report_html", size_bytes: 28103, downloadable: true, release_safe: false, contains_private_source_information: true },
+            { artifact_id: "66666666-6666-4666-8666-666666666666", kind: "primary_report_hwpx", size_bytes: 19422, downloadable: true, release_safe: false, contains_private_source_information: true },
           ],
         }),
       });
@@ -354,20 +389,40 @@ test("CSV six-step flow uploads chunks, resolves conflicts, resumes, and reports
   await expect(page.getByRole("heading", { name: "품질 보고서와 산출물" })).toBeVisible();
   await expect(page.getByText("개인정보 보호 보장 없음")).toBeVisible();
   await expect(page.getByTestId("report-chart")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "보고서 해설" })).toBeVisible();
-  await expect(page.getByText(/100,000행을 요청했고 실제 100,000행/)).toBeVisible();
-  await expect(page.getByText("외부 공개 미승인", { exact: true })).toBeVisible();
-  await expect(page.getByText("내부 검토용 · 원본 정보 포함 가능", { exact: true })).toBeVisible();
-  await expect(page.getByText(/다운로드 가능.*외부 공개 가능/)).toBeVisible();
-  const download = page.getByRole("link", { name: "파일 받기" }).first();
+  const executive = page.locator(".report-executive");
+  await expect(executive.getByRole("heading", { name: "한눈에 보는 결론" })).toBeVisible();
+  await expect(executive.locator(".report-overall")).toContainText("요청한 100,000행을 모두 생성했고 강제 규칙 위반 없이 구조 검증을 통과했습니다.");
+  const verdict = page.locator(".report-verdict");
+  await expect(verdict.getByRole("heading", { name: "한눈에 보는 판정" })).toHaveCount(0);
+  await expect(verdict).toContainText("생성 행 수");
+  await expect(verdict).toContainText("100,000행");
+  await expect(verdict.getByRole("link", { name: "쉬운 품질 보고서 받기 (한글 문서)" })).toHaveAttribute("href", "/api/v1/artifacts/66666666-6666-4666-8666-666666666666/download");
+
+  const downloads = page.locator(".downloads");
+  await expect(downloads.getByRole("heading", { name: "보고서와 생성 데이터" })).toBeVisible();
+  await expect(downloads.getByRole("heading", { name: "쉬운 품질 보고서" })).toBeVisible();
+  await expect(downloads.getByRole("heading", { name: "자세한 품질 보고서" })).toBeVisible();
+  await expect(downloads.getByRole("heading", { name: "생성 데이터", exact: true })).toBeVisible();
+  await expect(downloads.getByText("외부 공개 미승인", { exact: true })).toBeVisible();
+  await expect(downloads.getByText("내부 검토용 · 원본 정보 포함 가능", { exact: true })).toHaveCount(2);
+  await expect(downloads.getByRole("link", { name: "한글 문서 받기" })).toHaveAttribute("href", "/api/v1/artifacts/66666666-6666-4666-8666-666666666666/download");
+  await expect(downloads.getByRole("link", { name: "웹 문서 받기" })).toHaveAttribute("href", "/api/v1/artifacts/55555555-5555-4555-8555-555555555555/download");
+  const download = downloads.getByRole("link", { name: "파일 받기" }).first();
   await expect(download).toHaveAttribute("href", "/api/v1/artifacts/44444444-4444-4444-8444-444444444444/download");
   await expect(download).not.toHaveAttribute("download", /.+/);
 
+  // Tab panels stay mounted and are toggled with the hidden attribute.
+  await expect(page.locator("#report-summary")).toBeVisible();
+  await expect(page.locator("#report-columns")).toBeHidden();
+  await expect(page.locator("#report-boundary")).toBeHidden();
+  await expect(page.locator("#report-columns")).toHaveAttribute("hidden", "");
   const summaryTab = page.getByRole("tab", { name: "품질 요약" });
   await summaryTab.focus();
   await page.keyboard.press("ArrowRight");
   await expect(page.getByRole("tab", { name: "열별 거리" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("tab", { name: "열별 거리" })).toBeFocused();
+  await expect(page.locator("#report-summary")).toBeHidden();
+  await expect(page.getByRole("tabpanel", { name: "열별 거리" })).toBeVisible();
   await expect(page.getByRole("columnheader", { name: "합성 거리" })).toBeVisible();
 
   expect(state.offsets).toEqual([64 * 1024 * 1024, LARGE_LOGICAL_SIZE]);
@@ -427,7 +482,7 @@ test("reload restores the latest normalized dataset without browser storage", as
   await page.route("**/api/v1/**", async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === "/api/v1/bootstrap") {
-      await route.fulfill({ status: 204 });
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify(BOOTSTRAP_BODY) });
       return;
     }
     if (url.pathname === "/api/v1/datasets") {
@@ -522,7 +577,7 @@ test("restored DP job preserves the release ledger and boundary", async ({ page 
       contentType: "application/json",
       body: JSON.stringify(body),
     });
-    if (path === "/api/v1/bootstrap") return route.fulfill({ status: 204 });
+    if (path === "/api/v1/bootstrap") return json(BOOTSTRAP_BODY);
     if (path === "/api/v1/datasets") return json({
       version: "1.0",
       datasets: [{
@@ -594,6 +649,15 @@ test("restored DP job preserves the release ledger and boundary", async ({ page 
         downloadable: true,
         release_safe: true,
         contains_private_source_information: false,
+      }, {
+        artifact_id: "77777777-7777-4777-8777-777777777777",
+        job_id: JOB_ONE,
+        kind: "dp_release_report_hwpx",
+        size_bytes: 20480,
+        sha256: "c".repeat(64),
+        downloadable: true,
+        release_safe: true,
+        contains_private_source_information: false,
       }],
     });
     if (path === `/api/v1/jobs/${JOB_ONE}/reports/release`) return json({
@@ -619,4 +683,10 @@ test("restored DP job preserves the release ledger and boundary", async ({ page 
   await expect(page.getByText("DP 공개 경계 통과")).toBeVisible();
   await expect(page.getByRole("heading", { name: "형식적 DP 공개 요약" })).toBeVisible();
   await expect(page.getByText("add_remove_one_row")).toBeVisible();
+  await expect(page.locator(".report-executive").getByRole("heading", { name: "한눈에 보는 결론" })).toBeVisible();
+  await expect(page.locator(".report-verdict")).toContainText("1,000행");
+  const downloads = page.locator(".downloads");
+  await expect(downloads.getByRole("heading", { name: "보고서와 생성 데이터" })).toBeVisible();
+  await expect(downloads.getByRole("heading", { name: "쉬운 품질 보고서" })).toBeVisible();
+  await expect(downloads.getByRole("link", { name: "한글 문서 받기" })).toHaveAttribute("href", "/api/v1/artifacts/77777777-7777-4777-8777-777777777777/download");
 });

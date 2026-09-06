@@ -388,6 +388,17 @@ def _source_action(rule: RuleSpecValue) -> str:
     return str(rule.source_action)
 
 
+def build_public_codecs(compiled: CompiledRules) -> StructuralCodecs:
+    """Codecs resolved from public ``allowed_tuples`` only (no source inference).
+
+    This is the codec set for the formal-DP path: differential-privacy compilation
+    requires every fixed-combination rule to carry public tuples, so nothing private
+    is consulted here.
+    """
+
+    return _build_codecs(compiled)
+
+
 def _build_codecs(
     compiled: CompiledRules,
     inferred: Mapping[str, set[tuple[Any, ...]]] | None = None,
@@ -743,16 +754,49 @@ def _mark_invalid(row: dict[str, Any]) -> None:
     row[_INTERNAL_INVALID] = True
 
 
+def _materialized_targets(
+    batch: pa.Table | pa.RecordBatch,
+    compiled: CompiledRules,
+) -> frozenset[str]:
+    """Rule ids whose written columns are already present as plain values in ``batch``.
+
+    Used by the formal-DP path: the public codebook materializes every column, so
+    there is no ARGN latent (tuple index / compare delta) to reconstruct from. Such
+    rules are validated directly instead of decoded.
+    """
+
+    present = set(batch.schema.names)
+    targets: set[str] = set()
+    for rule in compiled.reconstruction_phase:
+        if isinstance(rule, FixedCombinationRule):
+            latent = _latent_name(rule.id, "tuple")
+            if latent not in present and all(column in present for column in rule.columns):
+                targets.add(rule.id)
+        elif isinstance(rule, CompareRule):
+            latent = _latent_name(rule.id, "delta")
+            if latent not in present and rule.right in present:
+                targets.add(rule.id)
+    return frozenset(targets)
+
+
 def reconstruct_batch(
     batch: pa.Table | pa.RecordBatch,
     compiled: CompiledRules,
     *,
     codecs: StructuralCodecs | None = None,
+    materialized: bool = False,
 ) -> pa.Table:
-    """Decode and reconstruct writers in compiler-proven topological order."""
+    """Decode and reconstruct writers in compiler-proven topological order.
+
+    With ``materialized=True`` (the formal-DP path) fixed-combination and compare rules
+    whose target columns are already present in the batch are left as-is for direct
+    validation rather than decoded from a latent that does not exist; deterministic
+    public rewrites (conditional_set, sum_equals) still apply.
+    """
 
     codecs = codecs or _build_codecs(compiled)
     schema = _schema_map(compiled)
+    skip = _materialized_targets(batch, compiled) if materialized else frozenset()
     rows = _table_rows(batch)
     identifiers = tuple(
         column for column in compiled.columns if column.kind is ColumnKind.IDENTIFIER
@@ -778,6 +822,8 @@ def reconstruct_batch(
                 else _synthetic_uuid4(index)
             )
     for rule in compiled.reconstruction_phase:
+        if rule.id in skip:
+            continue
         if isinstance(rule, FixedCombinationRule):
             tuples = codecs.tuples_for(rule)
             latent = _latent_name(rule.id, "tuple")
@@ -1014,8 +1060,9 @@ def repair_and_validate_candidate(
     compiled: CompiledRules,
     *,
     codecs: StructuralCodecs | None = None,
+    materialized: bool = False,
 ) -> FullValidationResult:
-    reconstructed = reconstruct_batch(batch, compiled, codecs=codecs)
+    reconstructed = reconstruct_batch(batch, compiled, codecs=codecs, materialized=materialized)
     return full_validate(reconstructed, compiled, codecs=codecs)
 
 

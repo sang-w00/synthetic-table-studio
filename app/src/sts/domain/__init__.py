@@ -23,6 +23,8 @@ from .models import (
     UtilityTrainingConfig,
 )
 from .states import (
+    DATASET_REOPEN_STATES,
+    DATASET_RETRY_RESTART_STATES,
     DATASET_RETRY_STATES,
     DATASET_TRANSITIONS,
     JOB_RUNNING_STATES,
@@ -41,6 +43,8 @@ __all__ = [
     "ColumnKind",
     "ColumnRole",
     "ColumnSchema",
+    "DATASET_REOPEN_STATES",
+    "DATASET_RETRY_RESTART_STATES",
     "DATASET_RETRY_STATES",
     "DATASET_TRANSITIONS",
     "DatasetManifest",

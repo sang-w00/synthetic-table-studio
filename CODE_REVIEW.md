@@ -80,140 +80,86 @@ Chromium으로 **6단계 워크플로 전체를 실행**했습니다. 업로드 
 
 ---
 
-## 2. 남은 것 (손대지 않음)
+## 2. 두 번째 패스에서 해결한 것 (2026-09-06)
 
-### 2.1 프라이버시 · DP 경계 — 설계 판단 필요
+첫 리뷰에서 "설계 판단 필요"로 남겨 둔 항목을 전부 구현했다. 판단이 필요했던 곳은 보수적인
+쪽을 택했고 그 이유를 각 항목에 적었다. 검증: 단위·통합 210건 + eval worker 계약 8건 통과,
+`ruff`·`tsc`·`eslint`(react-hooks 규칙 활성)·`vite build` 통과, mocked Playwright 5건 통과,
+실제 서버 + Chromium으로 6단계 전체와 아래 복구 시나리오를 실행.
 
-**A. ~~[치명적] DP 공개 보고서의 `release_count`가 상수 `1`~~ — 해결됨 (2026-09-01).**
-`CatalogRepository.ledger_scope_composition()`이 privacy scope 안에서 `spent_not_released`
-또는 `released` 상태인 모든 run의 ε과 δ를 basic sequential composition으로 합산합니다.
-`_run_dp_job`은 release 전이 **이후에** 이 값을 읽어 현재 run을 포함시키며, ledger를 읽지
-못하면 기본값을 쓰지 않고 작업이 실패합니다. 공개 보고서와 한글 문서는 이제 누적 ε·δ,
-예산을 쓴 실행 수, 공개 횟수를 함께 싣고, "자료 전체에 적용되는 보장은 이 결과 하나의 ε·δ가
-아니라 누적값"이라고 명시합니다. 공개하지 않은 실행도 원본을 건드린 시점에 손실이
-발생하므로 합산에 포함합니다.
+### 프라이버시 · DP 경계
 
-남은 한계 — **scope 경계는 도구가 볼 수 있는 것까지입니다.** privacy scope는
-`dataset_manifest_sha256`으로 묶이므로, 같은 사람이 서로 다른 파일에 들어 있으면 두 실행은
-합산되지 않습니다. 사람 단위의 실제 누적 손실은 보고된 값보다 클 수 있으며, 보고서 본문에도
-이 문장을 넣었습니다. 사람 단위로 정확히 합산하려면 업로드 간 개체 연결이 필요하고, 그건
-이 도구가 가진 정보로는 할 수 없습니다.
+**B. DP 경로의 빈 codecs → `fixed_combination`·`compare` 규칙 항상 실패.** 해결.
+`build_public_codecs(compiled)`가 공개 `allowed_tuples`만으로 codecs를 만들고(원본 추론
+없음), `repair_and_validate_candidate(..., materialized=True)`가 codebook이 이미 실체화한
+열을 latent에서 복원하려 들지 않고 공개 tuple에 직접 대조한다. 레거시 경로가 두 열을 모두
+NULL로 만들고 전 행을 무효 처리하던 실패를 단위 테스트가 고정한다.
 
-**B. [높음] DP 경로가 빈 `StructuralCodecs(fixed_tuples={})`를 넘겨서 `fixed_combination`·
-`compare` 규칙이 있는 DP 작업이 반드시 실패합니다.** `runtime.py`의 `_write_dp_batch`와
-`_evaluate_dp_curator` 두 곳입니다. `reconstruct_batch`는 `codecs.tuples_for(rule)`을 무조건
-호출하므로 `RULE_CONFLICT`가 나고, `compare`는 ARGN latent 델타 열을 pop 하려다 codebook
-디코딩 결과에는 그 열이 없어 전 행이 무효가 됩니다. 역시 ε을 다 쓴 뒤에 터집니다. codecs를
-컴파일된 규칙에서 만드는 것은 기계적이지만, latent 기반 재구성을 DP 디코딩 경로에서
-건너뛰는 부분은 설계가 필요합니다.
+**C. DP 막바지 취소가 CANCELLED 작업에 release-safe 산출물을 남김.** 해결, 두 겹으로.
+(1) 마지막 취소 확인은 ledger RELEASED 전이 **직전**이고, 그 이후 단계는 취소를 받지 않는다
+— 예산이 공개 출력에 대해 이미 쓰였으므로 끝까지 완료하는 것이 사실을 말하는 유일한 방법.
+(2) 방어 심층: `dp_release` scope 조회는 CANCELLED/FAILED 작업에 대해 빈 목록을 돌려준다.
 
-**C. [높음] DP 작업 막바지의 취소가 `release_safe=true` 산출물을 남긴 채 작업만 CANCELLED로
-만듭니다.** ledger가 이미 `RELEASED`이고 export도 published 된 뒤에 `_advance(PUBLISHING)`이
-취소 파일을 보고 예외를 던지면, UI는 "취소됨"인데 `GET .../artifacts?scope=dp_release`는
-여전히 공개 묶음을 돌려줍니다. release 전이 이후를 취소 불가 구간으로 두거나, terminal
-CANCELLED 작업을 `dp_release` scope에서 제외해야 합니다.
+**E. dpmm worker가 `PrivateFitRng`를 우회, `private_fit_rows` 노출.** 해결. worker는
+`sts`를 import할 수 없으므로 `PrivateFitRng.take_numpy_random_state`를 바이트 단위로 그대로
+미러링한다(OS CSPRNG 256비트 → 도메인 분리 SHA-256 commitment → SeedSequence → RandomState,
+사용 즉시 제로화). commitment는 `rng_policy`로 fit 결과와 ledger projection·공개 allowlist에
+실리고, worker가 commitment를 내지 않으면 작업이 실패한다. 원본 선택 행 수는 더 이상 보고하지
+않는다.
 
-**D. ~~[중간] `DP_LEDGER_ALLOWLIST`의 대부분이 채워지지 않음~~ — 해결됨 (2026-09-01).**
-예약 시점의 ledger record가 `accountant`, `conversion`, `wheel_sha256`, `lock_sha256`,
-`public_metadata_hashes`, `public_target_count_provenance`, `rule_postprocessing`,
-`limitations`를 담습니다. 메커니즘 신원(wheel/lock 해시, ε·δ → zCDP ρ 변환)은
-`load_dp_mechanism_provenance()`가 검증된 Phase-0 probe 결과에서 읽습니다. probe가 갖고
-있지 않은 값은 **추측해서 채우지 않고 생략**하며, allowlist projection이 그대로 떨어뜨립니다.
-`δ > 1/public_target_count` 권고도 이제 예약 시점에 계산되어 보고서까지 전달됩니다.
+### 상태 기계 · 동시성
 
-**E. [중간] `workers/dpmm`이 감사 대상인 `PrivateFitRng`를 우회합니다.** worker가
-`np.random.RandomState(os.urandom(32))`를 직접 만들어서 `privacy/rng.py`의 도메인 분리
-commitment와 1회 소비 핸들이 프로덕션에서는 죽은 코드입니다(`rng_policy`가 ledger에 남지
-않음). 또 `resource_usage`에 `private_fit_rows`(원본 선택 행 수)를 그대로 담아 attempt
-디렉터리의 JSON에 남깁니다. 그 파일에는 `contains_private_source_information` 표시가
-없습니다. worker가 별도 잠금 venv에서 돌아 `sts.privacy`를 import 하지 않으므로 설계가
-필요합니다.
+**F. retry가 진행 불가 상태로 되돌림.** 해결. FAILED → 실패한 작업 **직전의 안정 상태**
+(STAGED / RAW_READY / SCHEMA_READY)로 돌리고 같은 작업을 즉시 재디스패치한다.
 
-### 2.2 상태 기계 · 동시성
+**G. 읽기 메서드가 락 우회.** 해결. 모든 읽기가 `RLock` 아래에서 실행되어 커밋되지 않은
+쓰기를 보지 않는다.
 
-**F. [높음] 데이터셋 retry가 아무도 진행시킬 수 없는 실행 상태로 되돌립니다.**
-`api/datasets.py`의 `retry_dataset`은 state를 `inspecting`/`profiling`/`normalizing`으로
-되돌리고 끝납니다. 그런데 그 상태들에는 `legal_actions` 매핑이 없고, `/profile`은
-`RAW_READY`, `/normalize`는 `SCHEMA_READY`를 요구하므로 아무 것도 할 수 없습니다. retry가
-복구가 아니라 데이터셋을 영구히 못 쓰게 만듭니다. retry가 ledger 전이 후 실제 작업을
-디스패치하도록 바꿔야 합니다.
+**H. 업로드 PATCH가 본문 전체를 메모리에 적재.** 해결. `Content-Length`가 한도를 넘으면
+본문을 읽지 않고 413, 아니면 `request.stream()`으로 받다가 한도 초과 시 즉시 중단.
+SQLite/flock/fsync 쓰기는 스레드풀로.
 
-**G. [중간] repository의 읽기 메서드가 락 없이 공유 커넥션을 씁니다.** `_transaction`은
-`self._lock`을 쥐지만 `get_dataset`, `get_job`, `list_artifacts`, `replay_events` 등은 같은
-커넥션을 락 없이 씁니다. 단일 `sqlite3.Connection`이므로 다른 스레드의 열린 트랜잭션이
-**커밋되지 않은** 쓰기를 그대로 보여줍니다. 롤백될 상태를 API가 반환할 수 있습니다. 읽기용
-컨텍스트 매니저를 두거나 읽기 전용 커넥션을 분리해야 합니다(재진입 여부 확인 필요).
+**I. 상태 조회가 이벤트 전체 재생.** 해결. `latest_event()`(`ORDER BY id DESC LIMIT 1`).
 
-**H. [중간~높음] 업로드 PATCH가 본문 전체를 메모리에 담고 이벤트 루프를 막습니다.**
-`await request.body()`가 64 MiB 청크 상한을 적용하기 **전에** 전체 본문을 적재하므로 4 GB
-본문을 다 받은 뒤에 `UPLOAD_TOO_LARGE`를 돌려줍니다. 이어지는 SQLite·flock·fsync도 루프
-스레드에서 동기 실행됩니다. `request.stream()`으로 상한 초과 즉시 중단하고
-`run_in_threadpool`로 옮겨야 합니다.
+**K. 정규화 후 스키마 재편집 불가.** 해결. `POST /datasets/{id}/reopen`이 NORMALIZED /
+SCHEMA_READY → PROFILED로 되돌리며 normalized 매니페스트를 무효화한다. 실행 중인 작업이 있으면
+거부. 프런트는 편집 시 자동으로 reopen을 호출한다.
 
-**I. [낮음~중간] 상태 조회가 이벤트 전체를 재생합니다.** `GET /jobs?limit=100`이 작업마다
-모든 `EventRecord`를 만들어 마지막 하나만 씁니다. 이벤트가 쌓일수록 지연과 RSS가 무한히
-늘어납니다. `ORDER BY id DESC LIMIT 1` 하는 `latest_event`를 추가하면 됩니다.
+### 화면
 
-### 2.3 화면
+**J-0. 소수 열이 `정수`로 제안됨 — 근본 원인 수정.** DuckDB 1.5는 `try_cast('1.2' AS
+BIGINT)`를 **반올림해 1로 성공**시킨다. 프로파일러는 castability만 봤고 정규화기는
+`[+-]?[0-9]+` 정규식을 요구해 둘이 어긋났다. 프로파일러가 정규화기와 **같은 판정식**을 쓰도록
+고쳐 제안 유형은 이제 정규화가 실제로 받아들이는 유형이다. 브라우저에서 `score` 열이 `float`로
+제안되고 기본값 그대로 정규화까지 통과함을 확인. (이전 패스의 "실패 시 스키마 단계로 자동
+복귀"는 그대로 유지되어 이중 안전장치가 된다.)
 
-**J-0. ~~[높음] 스키마 자동 제안이 소수 열을 `정수`로 제안하고, 그 결과가 두 단계 뒤에
-터집니다~~ — 복구 경로는 해결됨 (2026-09-05).** 캐스팅 실패는 이제 데이터셋을 `failed`가
-아니라 스키마 단계(`profiled`)로 되돌리고, 오류 메시지가 문제 열과 조치를 명시하며, 화면이
-그 열만 필터링해 보여줍니다. 고쳐서 저장하면 정규화까지 그대로 이어집니다.
+**J. 작업 완료 시 강제 이동.** 해결. 진행 단계에 있을 때만 이동, 아니면 상태바에 "결과 보기".
+**L. 프로파일을 인덱스로 결합.** 해결. 이름 기준 `Map`.
+**M. 업로드 재시도 백오프 없음.** 해결. 지수 백오프(0.5s→8s), 총 5회, 재시도 가능 오류만.
+**N. 재개 판단이 이름+크기.** 해결. 머리·꼬리 64 KiB + 크기의 fingerprint를 대조하고 실패
+시 세션을 잊는다. 최종 안전장치는 여전히 서버의 `/complete` SHA-256.
+**O. 보고서 로드 실패 시 갇힘.** 해결. "보고서 다시 불러오기" 버튼.
+**P. SSE가 포기하지 않음.** 해결. 연속 실패 상한 후 "다시 연결" 버튼과 명확한 상태 문구.
+**Q. 프로파일·정규화 진행률 없음.** 해결. 데이터셋 SSE 스트림을 구독한다.
+**R. Playwright spec 낡음.** 해결. 5건 모두 현재 UI 기준으로 갱신·통과.
 
-남은 부분 — **제안 자체는 아직 개선하지 않았습니다.** 소수점이 있는 열을 여전히 `정수`로
-제안할 수 있고, 잘못된 제안은 정규화 시점에야 드러납니다. 프로파일 단계에서 소수점을 감지해
-`float`/`fixed_decimal`을 제안하거나, 스키마 저장 시점에 캐스팅을 미리 검사하면 왕복을 한 번
-더 줄일 수 있습니다.
+### 그 밖에
 
-**J. [높음] 작업이 끝나면 사용자가 어디에 있든 보고서 단계로 강제 이동합니다.**
-`connectToJob`이 현재 stage를 보지 않고 `moveTo("report")`를 호출해서, 작업 중에 스키마나
-규칙을 다시 보던 사용자가 편집 도중 끌려가고 저장 안 된 편집이 보이지 않는 단계에 남습니다.
-현재 stage를 ref로 잡아 `progress`에 있을 때만 이동하고, 아니면 "결과 보기" 버튼을 띄우는
-쪽이 맞습니다.
+`eslint-plugin-react-hooks@7.1.1`(eslint 10 호환) 활성 — 즉시 실제 의존성 누락 1건을 잡아
+정리했다. `vite.config.ts`에 `/api` 프록시. `bootstrap` 빈 본문 가드. 중복 live region 제거.
+openpyxl 변환 경로에도 DOCTYPE·엔티티 가드(모든 XML 멤버 머리 검사). 죽은 CSS·export 정리.
+`workers/dpmm`·`workers/eval`가 각자의 ruff 설정에서 lint clean.
 
-**K. [높음] 스키마를 다시 저장해도 정규화 매니페스트가 무효화되지 않습니다.**
-`datasetManifestSha`가 그대로 남아, 모드 단계로 바로 건너뛰어 합성을 시작하면 새
-`schema_version` + 옛 매니페스트 SHA 조합이 서버에서 거부됩니다. 사용자는 이유를 알 수
-없습니다. `saveSchema`에서 SHA를 비우고 단계를 되돌려야 합니다.
+## 3. 남은 것
 
-**L. [중간] 스키마 표가 프로파일 통계를 배열 인덱스로 결합합니다.** 복구 경로에서는 스키마와
-프로파일이 서로 다른 API에서 오므로 순서·길이가 같다는 보장이 없어, 새로고침 후 다른 열의
-고유값·null 수가 표시될 수 있습니다. 이름으로 `Map`을 만들어야 합니다.
+이 저장소 안에서 코드로 해결할 수 없는 것들이다.
 
-**M. [중간] 업로드 청크 재시도에 백오프가 없고, 재시도 예산이 청크마다 초기화되며,
-재시도하면 안 되는 오류도 재시도합니다.** 불안정한 소켓에서 사실상 무한 루프가 됩니다.
-
-**N. [중간] 재개 가능한 업로드를 파일명+크기만으로 판단하고, 실패해도 세션을 지우지
-않습니다.** 이름과 크기가 같은 다른 파일이 낡은 바이트 위에 이어 붙고 `/complete`의 SHA
-검사에서 실패하는데, 재시도해도 같은 실패를 반복합니다.
-
-**O. [중간] `loadReport` 실패 시 진행 단계에 갇힙니다.** SSE는 이미 닫혔고 취소 버튼은
-비활성이라, 성공한 합성 결과에 새로고침 없이는 접근할 수 없습니다. "보고서 다시 불러오기"
-버튼이 필요합니다.
-
-**P. [중간] SSE `onerror`가 절대 포기하지 않습니다.** 백엔드가 죽어도 "복구하고 있습니다"
-문구와 멈춘 퍼센트가 무한히 남습니다. 연속 실패를 세어 수동 새로고침을 제안해야 합니다.
-
-**Q. [중간] 프로파일링·정규화 진행률이 없습니다.** 백엔드는 `GET /datasets/{id}/events`를
-제공하는데 프런트가 쓰지 않아, 큰 파일에서 "형식 검사 100%" 이후 화면이 멈춘 것처럼
-보입니다.
-
-**R. [중간] `web/tests/*.spec.ts`가 현재 UI와 어긋나 있습니다.** `보고서 해설` 제목,
-`다운로드` 제목, `/다운로드 가능.*외부 공개 가능/` 텍스트는 지금 `App.tsx`에 없습니다.
-이번 작업 이전부터 어긋나 있던 것이고, Playwright 브라우저가 이 환경에 없어 실행 검증을 할
-수 없어 손대지 않았습니다. 로컬에서 `npm run test:e2e`로 한 번 맞춰 두시길 권합니다.
-
-### 2.4 그 밖에
-
-- `eslint-plugin-react-hooks`가 없어서 훅 의존성 문제가 `npm run lint`에 잡히지 않습니다.
-  (이번에 고친 `ReportChart`의 불안정한 의존성 배열이 그 예입니다.)
-- `vite.config.ts`에 `server.proxy`가 없어 `npm run dev`만으로는 모든 API 호출이 404입니다.
-- `api.ts`의 `bootstrap`이 204 같은 빈 본문을 방어하지 않아 `SESSION_REQUIRED: Unexpected end
-  of JSON input`으로 보입니다.
-- 진행률을 알리는 live region이 둘(`.global-status`, `.job-overview`)이라 스크린 리더가
-  이벤트마다 두 번 읽습니다.
-- `convert_xlsx_to_raw_parquet`의 `openpyxl` 경로에는 이번에 넣은 엔티티 가드가 적용되지
-  않습니다(openpyxl 자체 파서 사용). 별도 검토가 필요합니다.
-- `styles.css`의 `.page-intro`, `.session-mark`, `.site-footer`, `.site-kicker`와 `api.ts`의
-  다수 export가 사용되지 않습니다.
+- **누적 예산의 scope 경계.** privacy scope는 `dataset_manifest_sha256`으로 묶인다. 같은
+  사람이 다른 파일에도 있으면 두 실행은 합산되지 않으며, 사람 단위 실제 손실은 보고된 값보다
+  클 수 있다. 업로드 간 개체 연결 정보가 없으므로 도구가 알 수 없고, 보고서 본문에 그렇게
+  적혀 있다.
+- **실 백엔드 Playwright(`@desktop`).** ARGN worker가 있는 장비에서만 돌 수 있어 이번 패스에서
+  재검증하지 못했다. mocked 5건과 실제 서버(결정적 어댑터 + eval worker) 6단계 실행으로 대체.
+- **README 기존 한계.** L40S capacity proof 없음, ARF/ForestFlow 미고정 — 첫 릴리스부터
+  명시된 범위 밖.

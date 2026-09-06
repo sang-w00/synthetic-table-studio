@@ -75,6 +75,9 @@ def _candidate(
         return ColumnKind.CATEGORICAL, False, ()
     if parse.boolean == nonnull_count:
         return ColumnKind.BOOLEAN, False, ()
+    # `parse.integer` counts values that satisfy the normalizer's INTEGER predicate
+    # (an integer literal, not merely something DuckDB will round into one), so a
+    # proposed type is one normalization will actually accept.
     if parse.integer == nonnull_count:
         if digit_only_count == nonnull_count:
             # Codes, postal codes, and identifiers are commonly digit-only. Numeric is only a
@@ -167,6 +170,7 @@ def profile_parquet(
                     max(length({text})) FILTER (WHERE {nonnull_predicate}),
                     count(*) FILTER (
                         WHERE {nonnull_predicate}
+                          AND regexp_full_match(trim({text}), '[+-]?[0-9]+')
                           AND try_cast(trim({text}) AS BIGINT) IS NOT NULL
                     ),
                     count(*) FILTER (

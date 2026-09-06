@@ -15,6 +15,8 @@ from uuid import UUID, uuid4
 from pydantic import Field
 
 from sts.domain import (
+    DATASET_REOPEN_STATES,
+    DATASET_RETRY_RESTART_STATES,
     DATASET_RETRY_STATES,
     JOB_TERMINAL_STATES,
     ArtifactManifest,
@@ -328,7 +330,8 @@ class CatalogRepository:
 
     @property
     def journal_mode(self) -> str:
-        return str(self._connection.execute("PRAGMA journal_mode").fetchone()[0]).lower()
+        with self._lock:
+            return str(self._connection.execute("PRAGMA journal_mode").fetchone()[0]).lower()
 
     @contextmanager
     def _transaction(self) -> Iterator[sqlite3.Connection]:
@@ -343,10 +346,11 @@ class CatalogRepository:
                 self._connection.execute("COMMIT")
 
     def table_names(self) -> frozenset[str]:
-        rows = self._connection.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
-        )
-        return frozenset(row[0] for row in rows)
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+            )
+            return frozenset(row[0] for row in rows)
 
     def create_dataset(
         self,
@@ -392,29 +396,32 @@ class CatalogRepository:
         return self.get_dataset(dataset_id)
 
     def get_dataset(self, dataset_id: UUID | str) -> DatasetRecord:
-        row = self._connection.execute(
-            "SELECT * FROM datasets WHERE id = ?", (str(dataset_id),)
-        ).fetchone()
-        if row is None:
-            raise DomainError(ErrorCode.DATASET_NOT_FOUND, f"dataset not found: {dataset_id}")
-        return self._dataset_record(row)
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT * FROM datasets WHERE id = ?", (str(dataset_id),)
+            ).fetchone()
+            if row is None:
+                raise DomainError(ErrorCode.DATASET_NOT_FOUND, f"dataset not found: {dataset_id}")
+            return self._dataset_record(row)
 
     def list_datasets(self, *, limit: int = 20) -> tuple[DatasetRecord, ...]:
-        if limit < 1 or limit > 100:
-            raise ValueError("dataset list limit must be in 1..100")
-        rows = self._connection.execute(
-            "SELECT * FROM datasets ORDER BY updated_at DESC, id DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
-        return tuple(self._dataset_record(row) for row in rows)
+        with self._lock:
+            if limit < 1 or limit > 100:
+                raise ValueError("dataset list limit must be in 1..100")
+            rows = self._connection.execute(
+                "SELECT * FROM datasets ORDER BY updated_at DESC, id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+            return tuple(self._dataset_record(row) for row in rows)
 
     def get_dataset_manifest(self, dataset_id: UUID | str) -> DatasetManifest:
-        row = self._connection.execute(
-            "SELECT manifest_json FROM datasets WHERE id = ?", (str(dataset_id),)
-        ).fetchone()
-        if row is None:
-            raise DomainError(ErrorCode.DATASET_NOT_FOUND, f"dataset not found: {dataset_id}")
-        return DatasetManifest.model_validate_json(row["manifest_json"])
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT manifest_json FROM datasets WHERE id = ?", (str(dataset_id),)
+            ).fetchone()
+            if row is None:
+                raise DomainError(ErrorCode.DATASET_NOT_FOUND, f"dataset not found: {dataset_id}")
+            return DatasetManifest.model_validate_json(row["manifest_json"])
 
     def update_dataset_manifest(
         self,
@@ -534,13 +541,18 @@ class CatalogRepository:
                 DatasetState.PROFILING: "profile",
                 DatasetState.NORMALIZING: "normalize",
             }[failed_from]
+            # Land on the stable state that precedes the failed operation; the
+            # in-progress states have no legal actions and nothing would advance them.
+            restart_state = validate_dataset_transition(
+                DatasetState.FAILED, DATASET_RETRY_RESTART_STATES[failed_from]
+            )
             connection.execute(
                 """
                 INSERT INTO attempts(
                     id, owner_type, owner_id, attempt, operation, state, started_at
                 ) VALUES (?, 'dataset', ?, ?, ?, ?, ?)
                 """,
-                (attempt_id, identifier, attempt, operation, failed_from.value, timestamp),
+                (attempt_id, identifier, attempt, operation, restart_state.value, timestamp),
             )
             connection.execute(
                 """
@@ -549,7 +561,51 @@ class CatalogRepository:
                     failed_from_state = NULL, updated_at = ?
                 WHERE id = ?
                 """,
-                (failed_from.value, attempt, attempt_id, timestamp, identifier),
+                (restart_state.value, attempt, attempt_id, timestamp, identifier),
+            )
+        return self.get_dataset(identifier)
+
+    def reopen_dataset(self, dataset_id: UUID | str) -> DatasetRecord:
+        """Return a normalized or schema-ready dataset to PROFILED on a fresh attempt.
+
+        The previous attempt ended with a terminal DATASET_NORMALIZED event, so the
+        reopen opens a new attempt whose events can progress again.
+        """
+
+        identifier = str(dataset_id)
+        with self._transaction() as connection:
+            row = connection.execute(
+                "SELECT * FROM datasets WHERE id = ?", (identifier,)
+            ).fetchone()
+            if row is None:
+                raise DomainError(ErrorCode.DATASET_NOT_FOUND, f"dataset not found: {identifier}")
+            current = DatasetState(row["state"])
+            if current not in DATASET_REOPEN_STATES:
+                raise DomainError(
+                    ErrorCode.INVALID_STATE,
+                    "only a normalized or schema-ready dataset can be reopened for editing",
+                    context={"current": current.value},
+                )
+            target = validate_dataset_transition(current, DatasetState.PROFILED)
+            attempt = int(row["attempt"]) + 1
+            attempt_id = str(uuid4())
+            timestamp = _now()
+            connection.execute(
+                """
+                INSERT INTO attempts(
+                    id, owner_type, owner_id, attempt, operation, state, started_at
+                ) VALUES (?, 'dataset', ?, ?, 'reopen', ?, ?)
+                """,
+                (attempt_id, identifier, attempt, target.value, timestamp),
+            )
+            connection.execute(
+                """
+                UPDATE datasets
+                SET state = ?, attempt = ?, current_attempt_id = ?,
+                    failed_from_state = NULL, updated_at = ?
+                WHERE id = ?
+                """,
+                (target.value, attempt, attempt_id, timestamp, identifier),
             )
         return self.get_dataset(identifier)
 
@@ -621,10 +677,13 @@ class CatalogRepository:
         return self.get_job(identifier)
 
     def get_job(self, job_id: UUID | str) -> JobRecord:
-        row = self._connection.execute("SELECT * FROM jobs WHERE id = ?", (str(job_id),)).fetchone()
-        if row is None:
-            raise DomainError(ErrorCode.JOB_NOT_FOUND, f"job not found: {job_id}")
-        return self._job_record(row)
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT * FROM jobs WHERE id = ?", (str(job_id),)
+            ).fetchone()
+            if row is None:
+                raise DomainError(ErrorCode.JOB_NOT_FOUND, f"job not found: {job_id}")
+            return self._job_record(row)
 
     def list_jobs(
         self,
@@ -632,31 +691,33 @@ class CatalogRepository:
         limit: int = 20,
         dataset_id: UUID | str | None = None,
     ) -> tuple[JobRecord, ...]:
-        if limit < 1 or limit > 100:
-            raise ValueError("job list limit must be in 1..100")
-        if dataset_id is None:
-            rows = self._connection.execute(
-                "SELECT * FROM jobs ORDER BY updated_at DESC, id DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
-        else:
-            rows = self._connection.execute(
-                """
-                SELECT * FROM jobs
-                WHERE dataset_id = ?
-                ORDER BY updated_at DESC, id DESC LIMIT ?
-                """,
-                (str(dataset_id), limit),
-            ).fetchall()
-        return tuple(self._job_record(row) for row in rows)
+        with self._lock:
+            if limit < 1 or limit > 100:
+                raise ValueError("job list limit must be in 1..100")
+            if dataset_id is None:
+                rows = self._connection.execute(
+                    "SELECT * FROM jobs ORDER BY updated_at DESC, id DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+            else:
+                rows = self._connection.execute(
+                    """
+                    SELECT * FROM jobs
+                    WHERE dataset_id = ?
+                    ORDER BY updated_at DESC, id DESC LIMIT ?
+                    """,
+                    (str(dataset_id), limit),
+                ).fetchall()
+            return tuple(self._job_record(row) for row in rows)
 
     def get_job_request(self, job_id: UUID | str) -> SynthesisRequest:
-        row = self._connection.execute(
-            "SELECT request_json FROM jobs WHERE id = ?", (str(job_id),)
-        ).fetchone()
-        if row is None:
-            raise DomainError(ErrorCode.JOB_NOT_FOUND, f"job not found: {job_id}")
-        return SynthesisRequest.model_validate_json(row["request_json"])
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT request_json FROM jobs WHERE id = ?", (str(job_id),)
+            ).fetchone()
+            if row is None:
+                raise DomainError(ErrorCode.JOB_NOT_FOUND, f"job not found: {job_id}")
+            return SynthesisRequest.model_validate_json(row["request_json"])
 
     def transition_job(
         self,
@@ -793,23 +854,24 @@ class CatalogRepository:
         return self.get_job(identifier)
 
     def latest_attempt(self, owner_type: OwnerType | str, owner_id: UUID | str) -> AttemptRecord:
-        owner = OwnerType(owner_type)
-        row = self._connection.execute(
-            """
-            SELECT * FROM attempts
-            WHERE owner_type = ? AND owner_id = ?
-            ORDER BY attempt DESC LIMIT 1
-            """,
-            (owner.value, str(owner_id)),
-        ).fetchone()
-        if row is None:
-            code = (
-                ErrorCode.DATASET_NOT_FOUND
-                if owner is OwnerType.DATASET
-                else ErrorCode.JOB_NOT_FOUND
-            )
-            raise DomainError(code, f"{owner.value} not found: {owner_id}")
-        return self._attempt_record(row)
+        with self._lock:
+            owner = OwnerType(owner_type)
+            row = self._connection.execute(
+                """
+                SELECT * FROM attempts
+                WHERE owner_type = ? AND owner_id = ?
+                ORDER BY attempt DESC LIMIT 1
+                """,
+                (owner.value, str(owner_id)),
+            ).fetchone()
+            if row is None:
+                code = (
+                    ErrorCode.DATASET_NOT_FOUND
+                    if owner is OwnerType.DATASET
+                    else ErrorCode.JOB_NOT_FOUND
+                )
+                raise DomainError(code, f"{owner.value} not found: {owner_id}")
+            return self._attempt_record(row)
 
     def register_artifact(self, manifest: ArtifactManifest) -> ArtifactManifest:
         if (manifest.dataset_id is None) == (manifest.job_id is None):
@@ -883,12 +945,15 @@ class CatalogRepository:
         return self.register_artifact(manifest)
 
     def get_artifact(self, artifact_id: UUID | str) -> ArtifactManifest:
-        row = self._connection.execute(
-            "SELECT manifest_json FROM artifacts WHERE id = ?", (str(artifact_id),)
-        ).fetchone()
-        if row is None:
-            raise DomainError(ErrorCode.ARTIFACT_NOT_FOUND, f"artifact not found: {artifact_id}")
-        return ArtifactManifest.model_validate_json(row["manifest_json"])
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT manifest_json FROM artifacts WHERE id = ?", (str(artifact_id),)
+            ).fetchone()
+            if row is None:
+                raise DomainError(
+                    ErrorCode.ARTIFACT_NOT_FOUND, f"artifact not found: {artifact_id}"
+                )
+            return ArtifactManifest.model_validate_json(row["manifest_json"])
 
     def list_artifacts(
         self,
@@ -897,27 +962,28 @@ class CatalogRepository:
         dataset_id: UUID | str | None = None,
         scope: ArtifactScope | str = ArtifactScope.DOWNLOADABLE,
     ) -> tuple[ArtifactManifest, ...]:
-        if (job_id is None) == (dataset_id is None):
-            raise ValueError("exactly one job_id or dataset_id is required")
-        artifact_scope = ArtifactScope(scope)
-        owner_column = "job_id" if job_id is not None else "dataset_id"
-        owner_value = str(job_id if job_id is not None else dataset_id)
-        predicate = {
-            ArtifactScope.DOWNLOADABLE: "downloadable = 1",
-            ArtifactScope.DP_RELEASE: (
-                "release_safe = 1 AND contains_private_source_information = 0"
-            ),
-            ArtifactScope.INTERNAL: "1 = 1",
-        }[artifact_scope]
-        rows = self._connection.execute(
-            f"""
-            SELECT manifest_json FROM artifacts
-            WHERE {owner_column} = ? AND {predicate}
-            ORDER BY published_at, id
-            """,
-            (owner_value,),
-        )
-        return tuple(ArtifactManifest.model_validate_json(row["manifest_json"]) for row in rows)
+        with self._lock:
+            if (job_id is None) == (dataset_id is None):
+                raise ValueError("exactly one job_id or dataset_id is required")
+            artifact_scope = ArtifactScope(scope)
+            owner_column = "job_id" if job_id is not None else "dataset_id"
+            owner_value = str(job_id if job_id is not None else dataset_id)
+            predicate = {
+                ArtifactScope.DOWNLOADABLE: "downloadable = 1",
+                ArtifactScope.DP_RELEASE: (
+                    "release_safe = 1 AND contains_private_source_information = 0"
+                ),
+                ArtifactScope.INTERNAL: "1 = 1",
+            }[artifact_scope]
+            rows = self._connection.execute(
+                f"""
+                SELECT manifest_json FROM artifacts
+                WHERE {owner_column} = ? AND {predicate}
+                ORDER BY published_at, id
+                """,
+                (owner_value,),
+            )
+            return tuple(ArtifactManifest.model_validate_json(row["manifest_json"]) for row in rows)
 
     def append_event(
         self,
@@ -1007,16 +1073,38 @@ class CatalogRepository:
         *,
         after_event_id: int = 0,
     ) -> tuple[EventRecord, ...]:
+        with self._lock:
+            owner = OwnerType(owner_type)
+            rows = self._connection.execute(
+                """
+                SELECT * FROM events
+                WHERE owner_type = ? AND owner_id = ? AND id > ?
+                ORDER BY id
+                """,
+                (owner.value, str(owner_id), after_event_id),
+            )
+            return tuple(self._event_record(row) for row in rows)
+
+    def latest_event(
+        self,
+        owner_type: OwnerType | str,
+        owner_id: UUID | str,
+    ) -> EventRecord | None:
+        """Return the most recent event for an owner without replaying its history."""
+
         owner = OwnerType(owner_type)
-        rows = self._connection.execute(
-            """
-            SELECT * FROM events
-            WHERE owner_type = ? AND owner_id = ? AND id > ?
-            ORDER BY id
-            """,
-            (owner.value, str(owner_id), after_event_id),
-        )
-        return tuple(self._event_record(row) for row in rows)
+        with self._lock:
+            row = self._connection.execute(
+                """
+                SELECT * FROM events
+                WHERE owner_type = ? AND owner_id = ?
+                ORDER BY id DESC LIMIT 1
+                """,
+                (owner.value, str(owner_id)),
+            ).fetchone()
+        if row is None:
+            return None
+        return self._event_record(row)
 
     def acquire_resource_lease(
         self,
@@ -1103,15 +1191,16 @@ class CatalogRepository:
         return self.get_privacy_scope(identifier)
 
     def get_privacy_scope(self, privacy_scope_id: UUID | str) -> PrivacyScopeRecord:
-        row = self._connection.execute(
-            "SELECT * FROM privacy_scopes WHERE id = ?", (str(privacy_scope_id),)
-        ).fetchone()
-        if row is None:
-            raise DomainError(
-                ErrorCode.DP_METADATA_NOT_PUBLIC,
-                f"privacy scope not found: {privacy_scope_id}",
-            )
-        return self._privacy_scope_record(row)
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT * FROM privacy_scopes WHERE id = ?", (str(privacy_scope_id),)
+            ).fetchone()
+            if row is None:
+                raise DomainError(
+                    ErrorCode.DP_METADATA_NOT_PUBLIC,
+                    f"privacy scope not found: {privacy_scope_id}",
+                )
+            return self._privacy_scope_record(row)
 
     def reserve_ledger_run(
         self,
@@ -1222,12 +1311,13 @@ class CatalogRepository:
         return self.get_ledger_run(identifier)
 
     def get_ledger_run(self, run_id: UUID | str) -> LedgerRunRecord:
-        row = self._connection.execute(
-            "SELECT * FROM ledger_runs WHERE id = ?", (str(run_id),)
-        ).fetchone()
-        if row is None:
-            raise DomainError(ErrorCode.INVALID_STATE, f"ledger run not found: {run_id}")
-        return self._ledger_run_record(row)
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT * FROM ledger_runs WHERE id = ?", (str(run_id),)
+            ).fetchone()
+            if row is None:
+                raise DomainError(ErrorCode.INVALID_STATE, f"ledger run not found: {run_id}")
+            return self._ledger_run_record(row)
 
     @staticmethod
     def _validate_idempotency_key(value: str) -> str:

@@ -13,7 +13,7 @@ from uuid import UUID
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from sts.domain import ArtifactManifest, DomainError, ErrorCode
+from sts.domain import ArtifactManifest, DomainError, ErrorCode, JobState
 from sts.storage import CatalogRepository, WorkspaceLayout
 from sts.storage.repository import ArtifactScope
 
@@ -147,7 +147,15 @@ class ArtifactService:
         scope: ArtifactScope | str,
     ) -> dict[str, Any]:
         artifact_scope = ArtifactScope(scope)
-        self.repository.get_job(job_id)
+        record = self.repository.get_job(job_id)
+        if artifact_scope is ArtifactScope.DP_RELEASE and record.state in {
+            JobState.CANCELLED,
+            JobState.FAILED,
+        }:
+            # Defense in depth: a job that did not finish successfully has no formal-DP
+            # release to project, even if release-safe artifacts were staged before the
+            # job was cancelled or failed.
+            return {"job_id": str(job_id), "scope": artifact_scope.value, "artifacts": []}
         manifests = self.repository.list_artifacts(job_id=job_id, scope=artifact_scope)
         if artifact_scope is ArtifactScope.DP_RELEASE:
             # Defense in depth: this exact predicate is the only DP release projection.

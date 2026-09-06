@@ -594,3 +594,106 @@ def test_cancel_succeeded_or_failed_job_is_conflict(jobs_client) -> None:
     response = client.post(f"/api/v1/jobs/{failed.job_id}/cancel")
     assert response.status_code == 409
     assert response.json()["code"] == "INVALID_STATE"
+
+
+def test_dp_release_scope_is_empty_for_cancelled_or_failed_jobs(jobs_client) -> None:
+    client, _, _, repository, _, dataset = jobs_client
+    created = _create_utility(client, dataset, "cancelled-release-scope")
+    job = repository.get_job(created["job_id"])
+    safe = _publish(
+        repository,
+        job,
+        kind="privacy_ledger_json",
+        filename="safe-ledger.json",
+        content=b'{"version":"1.0","epsilon":"3"}',
+        downloadable=True,
+        release_safe=True,
+        private=False,
+    )
+    visible = client.get(f"/api/v1/jobs/{job.job_id}/artifacts?scope=dp_release")
+    assert [item["artifact_id"] for item in visible.json()["artifacts"]] == [
+        str(safe.artifact_id)
+    ]
+
+    repository.transition_job(
+        job.job_id, JobState.CANCELLING, expected_state=JobState.ADMITTED
+    )
+    repository.transition_job(
+        job.job_id, JobState.CANCELLED, expected_state=JobState.CANCELLING
+    )
+    hidden = client.get(f"/api/v1/jobs/{job.job_id}/artifacts?scope=dp_release")
+    assert hidden.status_code == 200
+    assert hidden.json() == {
+        "job_id": str(job.job_id),
+        "scope": "dp_release",
+        "artifacts": [],
+    }
+    # Other scopes are unaffected; only the DP release projection is withheld.
+    downloadable = client.get(f"/api/v1/jobs/{job.job_id}/artifacts?scope=downloadable")
+    assert [item["artifact_id"] for item in downloadable.json()["artifacts"]] == [
+        str(safe.artifact_id)
+    ]
+
+    other = _create_utility(client, dataset, "failed-release-scope")
+    failed_job = repository.get_job(other["job_id"])
+    _publish(
+        repository,
+        failed_job,
+        kind="privacy_ledger_json",
+        filename="safe-ledger.json",
+        content=b'{"version":"1.0","epsilon":"1"}',
+        downloadable=True,
+        release_safe=True,
+        private=False,
+    )
+    repository.transition_job(
+        failed_job.job_id,
+        JobState.FAILED,
+        expected_state=JobState.ADMITTED,
+        error_code=ErrorCode.WORKER_FAILED,
+    )
+    assert (
+        client.get(
+            f"/api/v1/jobs/{failed_job.job_id}/artifacts?scope=dp_release"
+        ).json()["artifacts"]
+        == []
+    )
+
+
+def test_dataset_reopen_is_refused_while_a_job_is_running(jobs_client) -> None:
+    from sts.api.datasets import DatasetService, create_dataset_router
+    from sts.storage.repository import OwnerType as _OwnerType
+
+    client, _, _, repository, layout, dataset = jobs_client
+    created = _create_utility(client, dataset, "reopen-blocker")
+    assert repository.get_job(created["job_id"]).state is JobState.ADMITTED
+
+    dataset_service = DatasetService(repository, layout, duckdb_memory_limit="256MB")
+    app = FastAPI()
+    install_problem_handlers(app)
+    app.include_router(create_dataset_router(dataset_service))
+    with TestClient(app) as dataset_client:
+        blocked = dataset_client.post(f"/api/v1/datasets/{dataset.dataset_id}/reopen")
+        assert blocked.status_code == 409
+        assert blocked.json()["code"] == "INVALID_STATE"
+        assert blocked.json()["context"]["active_jobs"] == [created["job_id"]]
+        assert (
+            repository.get_dataset(dataset.dataset_id).state is DatasetState.NORMALIZED
+        )
+        assert repository.latest_event(_OwnerType.DATASET, dataset.dataset_id) is None
+
+        repository.transition_job(
+            created["job_id"],
+            JobState.FAILED,
+            expected_state=JobState.ADMITTED,
+            error_code=ErrorCode.WORKER_FAILED,
+        )
+        # Once every job is terminal the job guard no longer applies. The fixture dataset
+        # has no control file, so the reopen now fails on that later step instead.
+        (
+            layout.dataset_dir(dataset.dataset_id, create=True) / ".dataset-api.json"
+        ).write_text(json.dumps({"version": "1.0", "normalized_relative_path": "x"}))
+        reopened = dataset_client.post(f"/api/v1/datasets/{dataset.dataset_id}/reopen")
+        assert reopened.status_code == 200, reopened.text
+        assert repository.get_dataset(dataset.dataset_id).state is DatasetState.PROFILED
+        assert repository.get_dataset_manifest(dataset.dataset_id).normalized is None

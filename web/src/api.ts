@@ -512,15 +512,109 @@ function rotateRight(value: number, count: number): number {
   return (value >>> count) | (value << (32 - count));
 }
 
-async function sha256File(file: File): Promise<string> {
+const FINGERPRINT_EDGE_BYTES = 64 * 1024;
+
+interface FileDigests {
+  sha256: string;
+  fingerprint: string;
+}
+
+// One streaming pass yields both the full SHA-256 the server validates and a cheap
+// fingerprint (first 64 KiB + last 64 KiB + size) used to decide whether a chosen
+// file is really the one an interrupted upload belongs to. Neither reads the whole
+// file into memory nor slices it.
+async function digestFile(file: File): Promise<FileDigests> {
   const hash = new Sha256();
+  const head = new Uint8Array(Math.min(FINGERPRINT_EDGE_BYTES, file.size));
+  let headFilled = 0;
+  const tailLength = Math.min(FINGERPRINT_EDGE_BYTES, file.size);
+  const tail = new Uint8Array(tailLength);
+  let tailFilled = 0;
   const reader = file.stream().getReader();
   for (;;) {
     const result = await reader.read();
     if (result.done) break;
-    hash.update(result.value);
+    const chunk = result.value;
+    hash.update(chunk);
+    if (headFilled < head.length) {
+      const take = Math.min(head.length - headFilled, chunk.length);
+      head.set(chunk.subarray(0, take), headFilled);
+      headFilled += take;
+    }
+    if (tailLength > 0) {
+      if (chunk.length >= tailLength) {
+        tail.set(chunk.subarray(chunk.length - tailLength));
+        tailFilled = tailLength;
+      } else {
+        const keep = tailLength - chunk.length;
+        tail.copyWithin(0, tailLength - keep);
+        tail.set(chunk, keep);
+        tailFilled = Math.min(tailLength, tailFilled + chunk.length);
+      }
+    }
   }
-  return hash.digestHex();
+  const material = new Uint8Array(head.length + tailFilled + 8);
+  material.set(head, 0);
+  material.set(tail.subarray(tailLength - tailFilled), head.length);
+  new DataView(material.buffer).setFloat64(head.length + tailFilled, file.size, false);
+  const digest = await crypto.subtle.digest("SHA-256", material);
+  const fingerprint = Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, "0")).join("");
+  return { sha256: hash.digestHex(), fingerprint };
+}
+
+const FINGERPRINT_STORAGE_PREFIX = "sts.upload-fingerprint.";
+
+// The server does not know the client-side fingerprint, so it lives in localStorage
+// keyed by dataset id. Storage is best-effort: without it a resume is simply not offered.
+function storedUploadFingerprint(datasetId: string): string | null {
+  try {
+    return window.localStorage.getItem(FINGERPRINT_STORAGE_PREFIX + datasetId);
+  } catch {
+    return null;
+  }
+}
+
+function rememberUploadFingerprint(datasetId: string, fingerprint: string): void {
+  try {
+    window.localStorage.setItem(FINGERPRINT_STORAGE_PREFIX + datasetId, fingerprint);
+  } catch {
+    // Best-effort only.
+  }
+}
+
+function forgetUploadFingerprint(datasetId: string): void {
+  try {
+    window.localStorage.removeItem(FINGERPRINT_STORAGE_PREFIX + datasetId);
+  } catch {
+    // Best-effort only.
+  }
+}
+
+const MAX_UPLOAD_RETRIES = 5;
+const UPLOAD_BACKOFF_BASE_MS = 500;
+const UPLOAD_BACKOFF_CAP_MS = 8_000;
+const RETRYABLE_CLIENT_STATUSES = new Set([409, 425, 429]);
+
+function sleep(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => { setTimeout(resolve, milliseconds); });
+}
+
+function isRetryableUploadError(error: unknown): boolean {
+  if (!(error instanceof ApiProblem)) return true; // network failure / aborted transfer
+  if (error.status >= 500 || error.status === 0) return true;
+  return RETRYABLE_CLIENT_STATUSES.has(error.status);
+}
+
+function uploadProblem(error: unknown, datasetId: string, offset: number): ApiProblem {
+  if (error instanceof ApiProblem) {
+    return new ApiProblem(error.status, error.code, error.message, {
+      ...error.context,
+      dataset_id: datasetId,
+      upload_offset: offset,
+    });
+  }
+  const detail = error instanceof Error ? error.message : "네트워크 오류로 조각을 전송하지 못했습니다.";
+  return new ApiProblem(0, "UPLOAD_NETWORK_ERROR", detail, { dataset_id: datasetId, upload_offset: offset });
 }
 
 function uploadOffset(response: Response, fallback: number): number {
@@ -552,21 +646,40 @@ export const api = {
   async bootstrap(): Promise<BootstrapResponse> {
     const response = await fetch("/api/v1/bootstrap", { credentials: "same-origin" });
     if (!response.ok) throw await problemFrom(response);
-    return response.json() as Promise<BootstrapResponse>;
+    // A 204 or an empty body must not surface as "Unexpected end of JSON input".
+    const text = response.status === 204 ? "" : await response.text();
+    if (text.trim() === "") {
+      throw new ApiProblem(
+        response.status,
+        "BOOTSTRAP_EMPTY_RESPONSE",
+        "서버가 초기화 응답을 비워서 보냈습니다. 서버 버전이 이 화면과 맞는지 확인하세요.",
+      );
+    }
+    try {
+      return JSON.parse(text) as BootstrapResponse;
+    } catch {
+      throw new ApiProblem(response.status, "BOOTSTRAP_INVALID_RESPONSE", "서버 초기화 응답을 읽을 수 없습니다.");
+    }
   },
 
   async uploadFile(
     file: File,
     onProgress: (progress: UploadProgress) => void,
     existing?: RecoverableDataset,
+    onResumeRejected?: () => void,
   ): Promise<DatasetSnapshot> {
     const extension = file.name.split(".").pop()?.toLowerCase();
     if (extension !== "csv" && extension !== "xlsx") {
       throw new ApiProblem(422, "INPUT_FORMAT_UNSUPPORTED", "CSV 또는 XLSX 파일만 업로드할 수 있습니다.");
     }
     onProgress({ sent: 0, total: file.size, phase: "hashing" });
-    const digest = await sha256File(file);
-    const session = existing ?? await requestJson<UploadSession>("/api/v1/datasets/uploads", {
+    const { sha256: digest, fingerprint } = await digestFile(file);
+    const resumable =
+      existing && storedUploadFingerprint(existing.dataset_id) === fingerprint ? existing : undefined;
+    if (existing && !resumable) {
+      onResumeRejected?.();
+    }
+    const session = resumable ?? await requestJson<UploadSession>("/api/v1/datasets/uploads", {
       method: "POST",
       body: JSON.stringify({
         filename: file.name,
@@ -574,12 +687,18 @@ export const api = {
         source_format: extension,
       }),
     });
+    rememberUploadFingerprint(session.dataset_id, fingerprint);
     let offset = await recoverOffset(session.dataset_id);
     if (offset > file.size) {
-      throw new ApiProblem(409, "UPLOAD_OFFSET_INVALID", "서버 업로드 위치가 파일 크기를 초과합니다.");
+      throw new ApiProblem(409, "UPLOAD_OFFSET_INVALID", "서버 업로드 위치가 파일 크기를 초과합니다.", {
+        dataset_id: session.dataset_id,
+        upload_offset: offset,
+      });
     }
     onProgress({ sent: offset, total: file.size, phase: "uploading" });
-    let recoveries = 0;
+    // One retry budget for the whole upload, with exponential backoff. 4xx responses
+    // other than 409/425/429 describe a request the server will keep rejecting.
+    let retries = 0;
     while (offset < file.size) {
       const nextOffset = Math.min(offset + MAX_UPLOAD_CHUNK_BYTES, file.size);
       try {
@@ -598,21 +717,49 @@ export const api = {
           throw new ApiProblem(409, "UPLOAD_OFFSET_INVALID", "업로드 위치가 앞으로 이동하지 않았습니다.");
         }
         offset = acknowledged;
-        recoveries = 0;
       } catch (error) {
-        if (recoveries >= 3) throw error;
-        recoveries += 1;
-        const recovered = await recoverOffset(session.dataset_id);
-        if (recovered < 0 || recovered > file.size) throw error;
-        offset = recovered;
+        if (!isRetryableUploadError(error)) throw uploadProblem(error, session.dataset_id, offset);
+        if (retries >= MAX_UPLOAD_RETRIES) {
+          const cause = error instanceof Error ? error.message : String(error);
+          throw new ApiProblem(
+            0,
+            "UPLOAD_RETRIES_EXHAUSTED",
+            `조각 전송을 ${MAX_UPLOAD_RETRIES}번 다시 시도했지만 실패했습니다 (${cause}). 네트워크를 확인한 뒤 같은 파일을 다시 선택하면 ${offset}바이트부터 이어집니다.`,
+            { dataset_id: session.dataset_id, upload_offset: offset },
+          );
+        }
+        const delay = Math.min(UPLOAD_BACKOFF_CAP_MS, UPLOAD_BACKOFF_BASE_MS * 2 ** retries);
+        retries += 1;
+        await sleep(delay);
+        try {
+          const recovered = await recoverOffset(session.dataset_id);
+          if (recovered >= 0 && recovered <= file.size) offset = recovered;
+        } catch {
+          // The offset probe failing is the same outage; the next PATCH attempt reports it.
+        }
       }
       onProgress({ sent: offset, total: file.size, phase: "uploading" });
     }
     onProgress({ sent: file.size, total: file.size, phase: "inspecting" });
-    return requestJson<DatasetSnapshot>(`/api/v1/datasets/${session.dataset_id}/complete`, {
-      method: "POST",
-      body: JSON.stringify({ sha256: digest }),
-    });
+    try {
+      return await requestJson<DatasetSnapshot>(`/api/v1/datasets/${session.dataset_id}/complete`, {
+        method: "POST",
+        body: JSON.stringify({ sha256: digest }),
+      });
+    } catch (error) {
+      if (error instanceof ApiProblem && error.status >= 400 && error.status < 500) {
+        // The bytes on the server do not match this file; a later resume would only
+        // repeat the failure, so the recoverable session is forgotten.
+        forgetUploadFingerprint(session.dataset_id);
+        throw new ApiProblem(
+          error.status,
+          error.code,
+          `${error.message} 이어올리기 정보를 지웠으므로 다음 업로드는 처음부터 시작합니다.`,
+          { ...error.context, dataset_id: session.dataset_id, resumable_cleared: true },
+        );
+      }
+      throw error;
+    }
   },
 
   listDatasets: (limit = 20) =>
@@ -653,6 +800,9 @@ export const api = {
     ),
   normalize: (datasetId: string) =>
     requestJson<DatasetSnapshot>(`/api/v1/datasets/${datasetId}/normalize`, { method: "POST" }),
+  // NORMALIZED | SCHEMA_READY -> PROFILED so the schema and rules can be edited again.
+  reopenDataset: (datasetId: string) =>
+    requestJson<DatasetSnapshot>(`/api/v1/datasets/${datasetId}/reopen`, { method: "POST" }),
   publishPublicMetadata: (payload: Record<string, unknown>) =>
     requestJson<ManifestFile>("/api/v1/privacy/public-metadata", {
       method: "POST",

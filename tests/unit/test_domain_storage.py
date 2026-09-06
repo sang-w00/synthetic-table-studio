@@ -53,7 +53,7 @@ EXPECTED_DATASET_TRANSITIONS = {
     DatasetState.RAW_READY: {DatasetState.PROFILING},
     DatasetState.PROFILING: {DatasetState.PROFILED, DatasetState.FAILED},
     DatasetState.PROFILED: {DatasetState.SCHEMA_READY},
-    DatasetState.SCHEMA_READY: {DatasetState.NORMALIZING},
+    DatasetState.SCHEMA_READY: {DatasetState.NORMALIZING, DatasetState.PROFILED},
     # PROFILED is the reopen edge: a schema-invalid normalize returns the dataset to
     # the editable schema step instead of terminating it.
     DatasetState.NORMALIZING: {
@@ -61,8 +61,12 @@ EXPECTED_DATASET_TRANSITIONS = {
         DatasetState.FAILED,
         DatasetState.PROFILED,
     },
-    DatasetState.NORMALIZED: set(),
-    DatasetState.FAILED: set(),
+    DatasetState.NORMALIZED: {DatasetState.PROFILED},
+    DatasetState.FAILED: {
+        DatasetState.STAGED,
+        DatasetState.RAW_READY,
+        DatasetState.SCHEMA_READY,
+    },
 }
 
 EXPECTED_JOB_TRANSITIONS = {
@@ -330,10 +334,19 @@ def test_sqlite_wal_schema_dataset_retry_and_monotonic_events(tmp_path: Path) ->
         assert retried.dataset_id == first.dataset_id
         assert retried.attempt == 2
         assert retried.attempt_id != first.attempt_id
-        assert retried.state is DatasetState.INSPECTING
+        # Retry lands on the stable state preceding the failed operation so the
+        # service can re-dispatch it; INSPECTING itself has no legal actions.
+        assert retried.state is DatasetState.STAGED
+        assert retried.failed_from_state is None
         assert (
             repository.latest_attempt(OwnerType.DATASET, manifest.dataset_id).operation
             == "inspect"
+        )
+        assert (
+            repository.transition_dataset(
+                manifest.dataset_id, DatasetState.INSPECTING
+            ).state
+            is DatasetState.INSPECTING
         )
         with pytest.raises(DomainError):
             repository.retry_dataset(manifest.dataset_id)

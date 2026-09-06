@@ -611,11 +611,12 @@ test("@desktop real CSV lifecycle reaches a utility report, cancel/resume, and l
     "succeeded utility downloadable artifacts",
   );
   await expect(page.getByText("개인정보 보호 보장 없음", { exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "보고서 해설" })).toBeVisible();
-  await expect(page.getByText(/2,000행을 요청했고 실제 2,000행/)).toBeVisible();
-  await expect(page.getByText(/열별 기준선 초과 거리는 중앙값/)).not.toContainText(
-    "계산되지 않음",
-  );
+  await expect(
+    page.locator(".report-executive").getByRole("heading", { name: "한눈에 보는 결론" }),
+  ).toBeVisible();
+  const verdict = page.locator(".report-verdict");
+  await expect(verdict).toContainText("2,000행");
+  await expect(verdict).not.toContainText("확인 불가");
 
   const summaryTab = page.getByRole("tab", { name: "품질 요약" });
   const columnsTab = page.getByRole("tab", { name: "열별 거리" });
@@ -632,7 +633,11 @@ test("@desktop real CSV lifecycle reaches a utility report, cancel/resume, and l
     "release_safe=false",
   );
 
-  const csvArtifact = page.locator(".downloads li").filter({ hasText: "합성 CSV" });
+  await expect(
+    page.locator(".downloads").getByRole("heading", { name: "보고서와 생성 데이터" }),
+  ).toBeVisible();
+  await expect(page.locator(".downloads").getByRole("heading", { name: "생성 데이터" })).toBeVisible();
+  const csvArtifact = page.locator(".downloads li").filter({ hasText: "합성 데이터 (CSV)" });
   const downloadLink = csvArtifact.getByRole("link", { name: "파일 받기" });
   await expect(downloadLink).toHaveAttribute(
     "href",
@@ -663,7 +668,9 @@ test("@desktop real CSV lifecycle reaches a utility report, cancel/resume, and l
   await expect(page.getByRole("region", { name: "품질 보고서와 산출물" })).toBeVisible({
     timeout: 30_000,
   });
-  await expect(page.getByRole("heading", { name: "다운로드" })).toBeVisible();
+  await expect(
+    page.locator(".downloads").getByRole("heading", { name: "보고서와 생성 데이터" }),
+  ).toBeVisible();
 });
 
 test("@compact generated XLSX takes the real sheet branch with keyboard and labelled state", async ({

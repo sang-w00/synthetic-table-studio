@@ -841,8 +841,7 @@ class JobService:
         except ValueError as error:
             raise DomainError(ErrorCode.SCHEMA_INVALID, str(error)) from error
 
-        existing_events = self.repository.replay_events(OwnerType.JOB, record.job_id)
-        if not existing_events:
+        if self.repository.latest_event(OwnerType.JOB, record.job_id) is None:
             self._emit(
                 record.job_id,
                 stage="queued",
@@ -924,8 +923,7 @@ class JobService:
 
     def get(self, job_id: UUID | str) -> dict[str, Any]:
         record = self.repository.get_job(job_id)
-        events = self.repository.replay_events(OwnerType.JOB, job_id)
-        latest = events[-1] if events else None
+        latest = self.repository.latest_event(OwnerType.JOB, job_id)
         actions: list[str] = []
         if record.state in JOB_RUNNING_STATES:
             actions.append("cancel")
@@ -1024,7 +1022,7 @@ class JobService:
             record = self.repository.resume_job(job_id, idempotency_key=idempotency_key)
         except ValueError as error:
             raise DomainError(ErrorCode.SCHEMA_INVALID, str(error)) from error
-        if not self.repository.replay_events(OwnerType.JOB, record.job_id):
+        if self.repository.latest_event(OwnerType.JOB, record.job_id) is None:
             self._emit(
                 record.job_id,
                 stage="resume",

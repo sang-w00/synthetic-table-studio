@@ -5,17 +5,20 @@ import json
 import math
 import os
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path, PurePosixPath
-from typing import Any, Mapping
+from typing import Any
 
 PROTOCOL_VERSION = "1.0"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 def canonical_json_bytes(value: Any) -> bytes:
-    return json.dumps(value, allow_nan=False, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return json.dumps(
+        value, allow_nan=False, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+    ).encode("utf-8")
 
 
 def _keys(value: Mapping[str, Any], expected: set[str], kind: str) -> None:
@@ -40,7 +43,11 @@ def validate_workspace_relative_path(value: str) -> str:
     if not isinstance(value, str) or not value or "\\" in value or "\x00" in value:
         raise ValueError("path must be a nonempty POSIX workspace-relative path")
     path = PurePosixPath(value)
-    if path.is_absolute() or value in (".", "..") or any(part in ("", ".", "..") for part in path.parts):
+    if (
+        path.is_absolute()
+        or value in (".", "..")
+        or any(part in ("", ".", "..") for part in path.parts)
+    ):
         raise ValueError("path must not be absolute or contain traversal components")
     return path.as_posix()
 
@@ -55,11 +62,15 @@ class SnapshotFile:
         validate_workspace_relative_path(self.path)
         if not isinstance(self.sha256, str) or not _SHA256_RE.fullmatch(self.sha256):
             raise ValueError("sha256 must be 64 lowercase hexadecimal characters")
-        if isinstance(self.size_bytes, bool) or not isinstance(self.size_bytes, int) or self.size_bytes < 0:
+        if (
+            isinstance(self.size_bytes, bool)
+            or not isinstance(self.size_bytes, int)
+            or self.size_bytes < 0
+        ):
             raise ValueError("size_bytes must be a nonnegative integer")
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "SnapshotFile":
+    def from_dict(cls, value: Mapping[str, Any]) -> SnapshotFile:
         _keys(value, {"path", "sha256", "size_bytes"}, "snapshot file")
         return cls(value["path"], value["sha256"], value["size_bytes"])
 
@@ -85,15 +96,23 @@ class ManifestSnapshot:
             raise ValueError("manifest snapshot paths must be unique")
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "ManifestSnapshot":
+    def from_dict(cls, value: Mapping[str, Any]) -> ManifestSnapshot:
         _keys(value, {"version", "workspace_root", "files"}, "manifest snapshot")
         raw = value["files"]
         if not isinstance(raw, dict):
             raise ValueError("manifest snapshot files must be an object")
-        return cls(value["version"], value["workspace_root"], {_string(k, "manifest key"): SnapshotFile.from_dict(v) for k, v in raw.items()})
+        return cls(
+            value["version"],
+            value["workspace_root"],
+            {_string(k, "manifest key"): SnapshotFile.from_dict(v) for k, v in raw.items()},
+        )
 
     def to_dict(self) -> dict[str, Any]:
-        return {"version": self.version, "workspace_root": self.workspace_root, "files": {key: value.to_dict() for key, value in self.files.items()}}
+        return {
+            "version": self.version,
+            "workspace_root": self.workspace_root,
+            "files": {key: value.to_dict() for key, value in self.files.items()},
+        }
 
 
 @dataclass(frozen=True)
@@ -122,16 +141,36 @@ class WorkerRequestEnvelope:
         validate_workspace_relative_path(self.cancellation_path)
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "WorkerRequestEnvelope":
-        _keys(value, {"version", "request_id", "job_id", "attempt", "worker_kind", "operation", "manifest_snapshot", "limits", "cancellation_path"}, "worker request")
+    def from_dict(cls, value: Mapping[str, Any]) -> WorkerRequestEnvelope:
+        _keys(
+            value,
+            {
+                "version",
+                "request_id",
+                "job_id",
+                "attempt",
+                "worker_kind",
+                "operation",
+                "manifest_snapshot",
+                "limits",
+                "cancellation_path",
+            },
+            "worker request",
+        )
         return cls(
-            value["version"], value["request_id"], value["job_id"], value["attempt"],
-            value["worker_kind"], value["operation"], ManifestSnapshot.from_dict(value["manifest_snapshot"]),
-            _object(value["limits"], "limits"), value["cancellation_path"],
+            value["version"],
+            value["request_id"],
+            value["job_id"],
+            value["attempt"],
+            value["worker_kind"],
+            value["operation"],
+            ManifestSnapshot.from_dict(value["manifest_snapshot"]),
+            _object(value["limits"], "limits"),
+            value["cancellation_path"],
         )
 
     @classmethod
-    def from_json(cls, value: str | bytes) -> "WorkerRequestEnvelope":
+    def from_json(cls, value: str | bytes) -> WorkerRequestEnvelope:
         parsed = json.loads(value)
         if not isinstance(parsed, dict):
             raise ValueError("worker request JSON must be an object")
@@ -139,9 +178,14 @@ class WorkerRequestEnvelope:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "version": self.version, "request_id": self.request_id, "job_id": self.job_id,
-            "attempt": self.attempt, "worker_kind": self.worker_kind, "operation": self.operation,
-            "manifest_snapshot": self.manifest_snapshot.to_dict(), "limits": self.limits,
+            "version": self.version,
+            "request_id": self.request_id,
+            "job_id": self.job_id,
+            "attempt": self.attempt,
+            "worker_kind": self.worker_kind,
+            "operation": self.operation,
+            "manifest_snapshot": self.manifest_snapshot.to_dict(),
+            "limits": self.limits,
             "cancellation_path": self.cancellation_path,
         }
 
@@ -161,7 +205,11 @@ class WorkerEvent:
     def __post_init__(self) -> None:
         if self.version != PROTOCOL_VERSION:
             raise ValueError("unsupported worker event version")
-        if isinstance(self.sequence, bool) or not isinstance(self.sequence, int) or self.sequence < 1:
+        if (
+            isinstance(self.sequence, bool)
+            or not isinstance(self.sequence, int)
+            or self.sequence < 1
+        ):
             raise ValueError("sequence must be an integer >= 1")
         try:
             datetime.fromisoformat(_string(self.timestamp, "timestamp").replace("Z", "+00:00"))
@@ -169,7 +217,12 @@ class WorkerEvent:
             raise ValueError("timestamp must be ISO 8601") from exc
         _string(self.stage, "stage")
         for field, number in (("completed", self.completed), ("total", self.total)):
-            if isinstance(number, bool) or not isinstance(number, (int, float)) or not math.isfinite(number) or number < 0:
+            if (
+                isinstance(number, bool)
+                or not isinstance(number, (int, float))
+                or not math.isfinite(number)
+                or number < 0
+            ):
                 raise ValueError(f"{field} must be a nonnegative finite number")
         if self.completed > self.total:
             raise ValueError("completed must not exceed total")
@@ -178,12 +231,36 @@ class WorkerEvent:
         _object(self.metrics, "metrics")
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "WorkerEvent":
-        _keys(value, {"version", "sequence", "timestamp", "stage", "completed", "total", "unit", "message_code", "metrics"}, "worker event")
+    def from_dict(cls, value: Mapping[str, Any]) -> WorkerEvent:
+        _keys(
+            value,
+            {
+                "version",
+                "sequence",
+                "timestamp",
+                "stage",
+                "completed",
+                "total",
+                "unit",
+                "message_code",
+                "metrics",
+            },
+            "worker event",
+        )
         return cls(**value)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"version": self.version, "sequence": self.sequence, "timestamp": self.timestamp, "stage": self.stage, "completed": self.completed, "total": self.total, "unit": self.unit, "message_code": self.message_code, "metrics": self.metrics}
+        return {
+            "version": self.version,
+            "sequence": self.sequence,
+            "timestamp": self.timestamp,
+            "stage": self.stage,
+            "completed": self.completed,
+            "total": self.total,
+            "unit": self.unit,
+            "message_code": self.message_code,
+            "metrics": self.metrics,
+        }
 
 
 @dataclass(frozen=True)
@@ -195,9 +272,15 @@ class WorkerResultEnvelope:
     error: dict[str, Any] | None
 
     def __post_init__(self) -> None:
-        if self.version != PROTOCOL_VERSION or self.status not in {"success", "failure", "cancelled"}:
+        if self.version != PROTOCOL_VERSION or self.status not in {
+            "success",
+            "failure",
+            "cancelled",
+        }:
             raise ValueError("unsupported worker result version or status")
-        if not isinstance(self.artifacts, list) or any(not isinstance(item, dict) for item in self.artifacts):
+        if not isinstance(self.artifacts, list) or any(
+            not isinstance(item, dict) for item in self.artifacts
+        ):
             raise ValueError("artifacts must be a list of JSON objects")
         canonical_json_bytes(self.artifacts)
         _object(self.resource_usage, "resource_usage")
@@ -213,19 +296,25 @@ class WorkerResultEnvelope:
             raise ValueError("failure results require an error")
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "WorkerResultEnvelope":
+    def from_dict(cls, value: Mapping[str, Any]) -> WorkerResultEnvelope:
         _keys(value, {"version", "status", "artifacts", "resource_usage", "error"}, "worker result")
         return cls(**value)
 
     @classmethod
-    def from_json(cls, value: str | bytes) -> "WorkerResultEnvelope":
+    def from_json(cls, value: str | bytes) -> WorkerResultEnvelope:
         parsed = json.loads(value)
         if not isinstance(parsed, dict):
             raise ValueError("worker result JSON must be an object")
         return cls.from_dict(parsed)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"version": self.version, "status": self.status, "artifacts": self.artifacts, "resource_usage": self.resource_usage, "error": self.error}
+        return {
+            "version": self.version,
+            "status": self.status,
+            "artifacts": self.artifacts,
+            "resource_usage": self.resource_usage,
+            "error": self.error,
+        }
 
 
 @dataclass(frozen=True)
@@ -336,7 +425,9 @@ class WorkerEventWriter:
 
     def append(self, event: WorkerEvent) -> None:
         if event.sequence != self._last_sequence + 1:
-            raise ValueError(f"event sequence must be {self._last_sequence + 1}, got {event.sequence}")
+            raise ValueError(
+                f"event sequence must be {self._last_sequence + 1}, got {event.sequence}"
+            )
         fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
         try:
             _write_all(fd, canonical_json_bytes(event.to_dict()) + b"\n")

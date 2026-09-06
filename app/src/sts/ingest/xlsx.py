@@ -149,6 +149,30 @@ def _open_xml(archive: zipfile.ZipFile, info: zipfile.ZipInfo):
         yield stream
 
 
+def _reject_entity_declarations(path: Path) -> None:
+    """Refuse a workbook if any XML part declares a DOCTYPE or entities.
+
+    ``_open_xml`` protects the four parts the preflight parses itself; the conversion
+    step hands the whole package to openpyxl, whose parser is not ours to configure.
+    Scanning the head of every XML member first means no entity declaration ever
+    reaches it, closing the expansion and external-entity paths on that route too.
+    """
+
+    with zipfile.ZipFile(path) as archive:
+        for info in archive.infolist():
+            name = info.filename.lower()
+            if not (name.endswith(".xml") or name.endswith(".rels")):
+                continue
+            with archive.open(info) as probe:
+                head = probe.read(_XML_PROLOG_SCAN_BYTES).lower()
+            if b"<!doctype" in head or b"<!entity" in head:
+                raise _unsafe(
+                    "PACKAGE_STRUCTURE",
+                    "XLSX XML parts must not declare a document type or entities",
+                    member=info.filename,
+                )
+
+
 def _local_name(tag: str) -> str:
     return tag.rpartition("}")[2]
 
@@ -739,6 +763,7 @@ def convert_xlsx_to_raw_parquet(
     writer: pq.ParquetWriter | None = None
     published = False
     try:
+        _reject_entity_declarations(Path(source_path))
         workbook = load_workbook(
             filename=Path(source_path),
             read_only=True,

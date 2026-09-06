@@ -11,8 +11,10 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Header, Query, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from starlette.concurrency import run_in_threadpool
 
 from sts.domain import (
+    DATASET_REOPEN_STATES,
     ColumnSchema,
     DatasetManifest,
     DatasetState,
@@ -20,6 +22,7 @@ from sts.domain import (
     ErrorCode,
     ManifestFile,
     canonical_json_bytes,
+    is_job_terminal,
 )
 from sts.ingest.normalize import normalize_to_parquet, raw_columns, validate_schema
 from sts.profile import DatasetProfile, profile_parquet
@@ -277,7 +280,14 @@ class DatasetService:
         )
         self.repository.transition_dataset(dataset_id, DatasetState.STAGED)
         self._emit(dataset_id, stage="upload", state=DatasetState.STAGED)
-        self.repository.transition_dataset(dataset_id, DatasetState.INSPECTING)
+        return self.start_inspect(dataset_id)
+
+    def start_inspect(self, dataset_id: UUID | str) -> dict[str, Any]:
+        self.repository.transition_dataset(
+            dataset_id,
+            DatasetState.INSPECTING,
+            expected_state=DatasetState.STAGED,
+        )
         self._emit(dataset_id, stage="inspect", state=DatasetState.INSPECTING, completed=0)
         try:
             inspected = self._inspect(dataset_id)
@@ -810,9 +820,60 @@ class DatasetService:
             completed=0,
             code="DATASET_RETRY_STARTED",
         )
+        # The repository returned the dataset to the stable state that precedes the
+        # failed operation; re-dispatch that operation now so the retry actually runs
+        # instead of parking the dataset in a state nothing can advance.
+        dispatch = {
+            DatasetState.STAGED: self.start_inspect,
+            DatasetState.RAW_READY: self.start_profile,
+            DatasetState.SCHEMA_READY: self.start_normalize,
+        }[record.state]
+        dispatch(dataset_id)
+        current = self.repository.get_dataset(dataset_id)
         return RetryResponse(
-            dataset_id=UUID(str(dataset_id)), state=record.state, attempt=record.attempt
+            dataset_id=UUID(str(dataset_id)), state=current.state, attempt=current.attempt
         )
+
+    def reopen(self, dataset_id: UUID | str) -> dict[str, Any]:
+        """Return a normalized or schema-ready dataset to the editable PROFILED step."""
+
+        record = self.repository.get_dataset(dataset_id)
+        if record.state not in DATASET_REOPEN_STATES:
+            raise DomainError(
+                ErrorCode.INVALID_STATE,
+                "only a normalized or schema-ready dataset can be reopened for editing",
+                context={"current": record.state.value},
+            )
+        active = [
+            str(job.job_id)
+            for job in self.repository.list_jobs(limit=100, dataset_id=dataset_id)
+            if not is_job_terminal(job.state)
+        ]
+        if active:
+            raise DomainError(
+                ErrorCode.INVALID_STATE,
+                "dataset cannot be reopened while jobs are still running against it",
+                context={"active_jobs": active},
+            )
+        manifest = self.repository.get_dataset_manifest(dataset_id)
+        self.repository.update_dataset_manifest(
+            dataset_id,
+            manifest.model_copy(update={"normalized": None, "row_count": None}),
+            expected_state=record.state,
+        )
+        control = self._control(dataset_id)
+        control.pop("normalized_relative_path", None)
+        control.pop("typed_profile_relative_path", None)
+        self._save_control(dataset_id, control)
+        reopened = self.repository.reopen_dataset(dataset_id)
+        self._emit(
+            dataset_id,
+            stage="reopen",
+            state=reopened.state,
+            terminal=False,
+            code="DATASET_REOPENED",
+        )
+        return {"dataset_id": str(dataset_id), "state": reopened.state.value}
 
     def _reopen_after_normalize(self, dataset_id: UUID | str, error: DomainError) -> bool:
         """Return a schema-invalid normalize to the editable PROFILED state.
@@ -926,11 +987,11 @@ class DatasetService:
             DatasetState.SHEET_REQUIRED: ["select_sheet"],
             DatasetState.RAW_READY: ["profile"],
             DatasetState.PROFILED: ["save_schema"],
-            DatasetState.SCHEMA_READY: ["normalize"],
+            DatasetState.SCHEMA_READY: ["normalize", "reopen"],
+            DatasetState.NORMALIZED: ["reopen"],
             DatasetState.FAILED: ["retry"],
         }.get(record.state, [])
-        events = self.repository.replay_events(OwnerType.DATASET, dataset_id)
-        latest = events[-1] if events else None
+        latest = self.repository.latest_event(OwnerType.DATASET, dataset_id)
         manifest = self.repository.get_dataset_manifest(dataset_id)
         control = self._control(dataset_id)
         upload_offset = (
@@ -976,8 +1037,29 @@ def create_dataset_router(service: DatasetService) -> APIRouter:
         request: Request,
         upload_offset: int = Header(alias="Upload-Offset", ge=0),
     ) -> Response:
-        body = await request.body()
-        new_offset = service.append_content(dataset_id, upload_offset, body)
+        # Read the body incrementally and stop the moment the chunk limit is crossed:
+        # `request.body()` would buffer an arbitrarily large body in memory before the
+        # size check ran. The sqlite/flock/fsync write then leaves the event loop.
+        limit = service.uploads.max_chunk_bytes
+        declared = request.headers.get("content-length")
+        if declared is not None and declared.isdigit() and int(declared) > limit:
+            raise DomainError(
+                ErrorCode.UPLOAD_TOO_LARGE,
+                f"upload chunks may not exceed {limit} bytes",
+                context={"chunk_bytes": int(declared), "limit_bytes": limit},
+            )
+        received = bytearray()
+        async for part in request.stream():
+            received.extend(part)
+            if len(received) > limit:
+                raise DomainError(
+                    ErrorCode.UPLOAD_TOO_LARGE,
+                    f"upload chunks may not exceed {limit} bytes",
+                    context={"chunk_bytes": len(received), "limit_bytes": limit},
+                )
+        new_offset = await run_in_threadpool(
+            service.append_content, dataset_id, upload_offset, bytes(received)
+        )
         return Response(status_code=204, headers={"Upload-Offset": str(new_offset)})
 
     @router.post("/{dataset_id}/complete", status_code=status.HTTP_202_ACCEPTED)
@@ -1043,5 +1125,9 @@ def create_dataset_router(service: DatasetService) -> APIRouter:
     @router.post("/{dataset_id}/retry", status_code=status.HTTP_202_ACCEPTED)
     def retry(dataset_id: UUID) -> dict[str, Any]:
         return service.retry(dataset_id).model_dump(mode="json")
+
+    @router.post("/{dataset_id}/reopen")
+    def reopen(dataset_id: UUID) -> dict[str, Any]:
+        return service.reopen(dataset_id)
 
     return router

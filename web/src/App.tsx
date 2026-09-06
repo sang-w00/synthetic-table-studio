@@ -77,6 +77,23 @@ const RULE_LABELS: Record<RuleKind, string> = {
   compare: "열 비교",
 };
 
+const DATASET_STAGE_LABELS: Record<string, string> = {
+  profiling: "프로파일링",
+  profile: "프로파일링",
+  normalizing: "정규화",
+  normalize: "정규화",
+  casting: "형 변환",
+  compiling_rules: "규칙 컴파일",
+  validating: "검증",
+  succeeded: "완료",
+  failed: "실패",
+};
+
+// Consecutive SSE errors tolerated before the stream is closed and the user is asked to reconnect.
+const SSE_MAX_CONSECUTIVE_ERRORS = 5;
+const SSE_SILENCE_LIMIT_MS = 60_000;
+const SSE_DISCONNECTED_STATUS = "서버와 연결이 끊어졌습니다. 새로고침하거나 '다시 연결'을 누르세요.";
+
 const JOB_STAGE_LABELS: Record<string, string> = {
   queued: "대기열",
   admission: "자원 승인",
@@ -268,7 +285,9 @@ export function App() {
   const [file, setFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
   const [datasetId, setDatasetId] = useState<string | null>(null);
+  const [datasetState, setDatasetState] = useState<string | null>(null);
   const [datasetManifestSha, setDatasetManifestSha] = useState<string | null>(null);
+  const [datasetProgress, setDatasetProgress] = useState<ProgressEventPayload | null>(null);
   const [uploadBranch, setUploadBranch] = useState<UploadBranch>("none");
   const [recoverableUpload, setRecoverableUpload] = useState<RecoverableDataset | null>(null);
   const [parseOptions, setParseOptions] = useState<ParseOptions>({
@@ -316,18 +335,29 @@ export function App() {
   const [report, setReport] = useState<PrimaryReport | null>(null);
   const [artifacts, setArtifacts] = useState<ArtifactManifest[]>([]);
   const [reportTab, setReportTab] = useState<ReportTab>("summary");
+  // The finished report waits here when the user is on another stage; "결과 보기" navigates.
+  const [reportReady, setReportReady] = useState(false);
+  const [reportLoadError, setReportLoadError] = useState<string | null>(null);
+  const [connectionLost, setConnectionLost] = useState(false);
   const eventSource = useRef<EventSource | null>(null);
+  const datasetEventSource = useRef<EventSource | null>(null);
   const stageFocusRequested = useRef(false);
+  const stageRef = useRef<Stage>("upload");
+  stageRef.current = stage;
 
   const conflicts = useMemo(() => findRuleConflicts(rules), [rules]);
+  const profileByName = useMemo(
+    () => new Map((profile?.columns ?? []).map((observed) => [observed.name, observed] as const)),
+    [profile],
+  );
   const visibleColumns = useMemo(
     () => columns
-      .map((column, index) => ({ column, index, profile: profile?.columns[index] }))
+      .map((column, index) => ({ column, index, profile: profileByName.get(column.name) }))
       .filter(({ column, profile: observed }) => (
         column.name.toLocaleLowerCase().includes(schemaQuery.trim().toLocaleLowerCase())
         && (!schemaNeedsReviewOnly || observed?.candidate_requires_confirmation === true)
       )),
-    [columns, profile, schemaNeedsReviewOnly, schemaQuery],
+    [columns, profileByName, schemaNeedsReviewOnly, schemaQuery],
   );
   const currentStageIndex = STAGES.findIndex((item) => item.id === stage);
 
@@ -355,7 +385,14 @@ export function App() {
         setError(`SESSION_REQUIRED: ${displayError(bootstrapError)}`);
         setGlobalStatus("초기화에 실패했습니다.");
       });
-    return () => eventSource.current?.close();
+    return () => {
+      eventSource.current?.close();
+      datasetEventSource.current?.close();
+    };
+    // Bootstrap runs exactly once per mount. recoverWorkspace closes over state
+    // setters only, which React guarantees stable, so re-running it on every render
+    // would only re-fetch the workspace, never fix a stale value.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -395,17 +432,61 @@ export function App() {
     setError(null);
   }
 
+  // Streams dataset-level progress (profiling / normalization) into the global status
+  // while a long HTTP call is awaited. Returns the function that closes the stream.
+  function watchDatasetEvents(id: string, fallbackLabel: string): () => void {
+    datasetEventSource.current?.close();
+    setDatasetProgress(null);
+    setGlobalStatus(`${fallbackLabel} 중입니다…`);
+    let source: EventSource | null = null;
+    try {
+      source = new EventSource(`/api/v1/datasets/${id}/events`);
+    } catch {
+      return () => undefined;
+    }
+    datasetEventSource.current = source;
+    const handleEvent = (message: MessageEvent<string>): void => {
+      try {
+        const payload = JSON.parse(message.data) as ProgressEventPayload;
+        setDatasetProgress(payload);
+        const label = DATASET_STAGE_LABELS[payload.stage] ?? payload.stage;
+        setGlobalStatus(`${label}: ${payload.completed}/${payload.total} ${payload.unit ?? "단계"}`);
+        if (["succeeded", "failed", "cancelled"].includes(payload.state)) source?.close();
+      } catch {
+        // Malformed progress is cosmetic here; the awaited HTTP call reports the outcome.
+      }
+    };
+    source.onmessage = handleEvent;
+    source.addEventListener("progress", handleEvent as EventListener);
+    source.addEventListener("terminal", handleEvent as EventListener);
+    source.onerror = () => {
+      // Servers without this stream (404) close it for good; nothing else to do.
+    };
+    return () => {
+      source?.close();
+      if (datasetEventSource.current === source) datasetEventSource.current = null;
+      setDatasetProgress(null);
+    };
+  }
+
   async function profileDataset(id: string): Promise<void> {
-    await api.startProfile(id);
+    const stopWatching = watchDatasetEvents(id, "프로파일링");
+    try {
+      await api.startProfile(id);
+    } finally {
+      stopWatching();
+    }
     const result = await api.getProfile(id);
     setProfile(result);
     setColumns(schemaFromProfile(result));
+    setDatasetState("profiled");
     setGlobalStatus(`${result.row_count.toLocaleString("ko-KR")}행, ${result.column_count}열 프로파일을 완료했습니다.`);
     moveTo("schema");
   }
 
   async function followInspection(id: string, state: string): Promise<void> {
     setDatasetId(id);
+    setDatasetState(state);
     if (state === "parse_options_required") {
       const response = await api.getParseOptions(id);
       if (response.confirmation) {
@@ -446,6 +527,7 @@ export function App() {
       return;
     }
     setDatasetId(recovered.dataset_id);
+    setDatasetState(recovered.state);
     setDatasetManifestSha(recovered.manifest_sha256 ?? null);
     if (recovered.state === "uploading") {
       setRecoverableUpload(recovered);
@@ -504,7 +586,9 @@ export function App() {
     setJobProgress(recoveredJob.progress ?? null);
     setOutputRows(recoveredJob.output_rows);
     if (recoveredJob.state === "succeeded") {
-      await loadReport(recoveredJob.job_id);
+      // Land on the progress stage first so a failed report load has a retry button.
+      moveTo("progress");
+      await loadReport(recoveredJob.job_id, true);
       return;
     }
     moveTo("progress");
@@ -531,12 +615,38 @@ export function App() {
         recoverableUpload.size_bytes === file.size
           ? recoverableUpload
           : undefined;
-      const snapshot = await api.uploadFile(file, setUploadProgress, matchingUpload);
+      const snapshot = await api.uploadFile(file, setUploadProgress, matchingUpload, () => {
+        setGlobalStatus("선택한 파일이 중단된 업로드와 내용이 달라 처음부터 새로 올립니다.");
+      });
       setRecoverableUpload(null);
       await followInspection(snapshot.dataset_id, snapshot.state);
     } catch (uploadError) {
       setError(displayError(uploadError));
-      setGlobalStatus("업로드를 완료하지 못했습니다. 서버 위치를 확인한 뒤 다시 시도할 수 있습니다.");
+      const context = uploadError instanceof ApiProblem ? uploadError.context : {};
+      if (context.resumable_cleared === true) {
+        setRecoverableUpload(null);
+        setUploadProgress(null);
+        setGlobalStatus("파일 검증에 실패해 이어올리기 정보를 지웠습니다. 다음 업로드는 처음부터 시작합니다.");
+      } else if (typeof context.dataset_id === "string" && typeof context.upload_offset === "number") {
+        // Keep the interrupted session so choosing the same file again resumes it.
+        const sessionId = context.dataset_id;
+        const offset = context.upload_offset;
+        setRecoverableUpload({
+          dataset_id: sessionId,
+          state: "uploading",
+          filename: file.name,
+          size_bytes: file.size,
+          source_format: file.name.toLowerCase().endsWith(".xlsx") ? "xlsx" : "csv",
+          upload_offset: offset,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+        setGlobalStatus(
+          `업로드가 ${formatBytes(offset)}에서 멈췄습니다. 같은 파일을 다시 선택하고 업로드하면 그 지점부터 이어집니다.`,
+        );
+      } else {
+        setGlobalStatus("업로드를 완료하지 못했습니다. 서버 위치를 확인한 뒤 다시 시도할 수 있습니다.");
+      }
     } finally {
       setBusy(false);
     }
@@ -592,13 +702,51 @@ export function App() {
     );
   }
 
+  // Editing the schema or rules after they were fixed requires the dataset to be
+  // reopened (NORMALIZED | SCHEMA_READY -> PROFILED); otherwise the save is rejected.
+  // Returns false when the user declined.
+  async function reopenForEditing(): Promise<boolean> {
+    if (!datasetId || datasetState === "profiled" || datasetState === null) return true;
+    if (job?.state === "succeeded" || report) {
+      const accepted = window.confirm(
+        "이 데이터셋으로 이미 합성을 완료했습니다. 정규화 결과를 초기화하고 스키마·규칙을 다시 편집하면 새로 정규화한 뒤 합성을 다시 실행해야 합니다. 계속할까요?",
+      );
+      if (!accepted) return false;
+    }
+    const snapshot = await api.reopenDataset(datasetId);
+    setDatasetState(snapshot.state);
+    setDatasetManifestSha(null);
+    setHighestStage(STAGES.findIndex((item) => item.id === "rules"));
+    setReportReady(false);
+    setGlobalStatus("정규화 결과를 초기화했습니다. 다시 저장하면 새로 정규화합니다.");
+    return true;
+  }
+
+  async function navigateTo(next: Stage): Promise<void> {
+    if ((next === "schema" || next === "rules") && datasetState === "normalized") {
+      setError(null);
+      setBusy(true);
+      try {
+        if (!(await reopenForEditing())) return;
+      } catch (reopenError) {
+        setError(displayError(reopenError));
+        return;
+      } finally {
+        setBusy(false);
+      }
+    }
+    moveTo(next);
+  }
+
   async function saveSchema(): Promise<void> {
     if (!datasetId) return;
     setBusy(true);
     setError(null);
     try {
+      if (!(await reopenForEditing())) return;
       const snapshot = await api.saveSchema(datasetId, columns);
       setSchemaVersion(snapshot.schema_version);
+      setDatasetState(snapshot.state ?? "schema_ready");
       setGlobalStatus("열 유형과 역할을 고정했습니다. 이제 무결성 규칙을 정의하세요.");
       moveTo("rules");
     } catch (schemaError) {
@@ -625,12 +773,24 @@ export function App() {
     setBusy(true);
     setError(null);
     try {
+      if (datasetState === "normalized" && !(await reopenForEditing())) return;
+      if (datasetState === "profiled") {
+        // Reopened dataset: the schema must be fixed again before rules are accepted.
+        const savedSchema = await api.saveSchema(datasetId, columns);
+        setSchemaVersion(savedSchema.schema_version);
+      }
       const saved = await api.saveRules(datasetId, rules);
       setRulesVersion(saved.rules_version);
-      await api.normalize(datasetId);
+      const stopWatching = watchDatasetEvents(datasetId, "정규화");
+      try {
+        await api.normalize(datasetId);
+      } finally {
+        stopWatching();
+      }
       const snapshot = await api.getDataset(datasetId);
       if (!snapshot.manifest_sha256) throw new Error("정규화된 데이터셋 manifest SHA가 없습니다.");
       setDatasetManifestSha(snapshot.manifest_sha256);
+      setDatasetState(snapshot.state ?? "normalized");
       setGlobalStatus(`${rules.length}개 규칙을 컴파일하고 정규화를 완료했습니다.`);
       moveTo("mode");
     } catch (rulesError) {
@@ -641,6 +801,7 @@ export function App() {
         const column = typeof rulesError.context.column === "string" ? rulesError.context.column : null;
         if (column) setSchemaQuery(column);
         setDatasetManifestSha(null);
+        setDatasetState("profiled");
         // moveTo clears the error banner, so the reason is set after the move: the
         // user needs the specific column and cast that failed, not just the step.
         moveTo("schema");
@@ -658,7 +819,8 @@ export function App() {
     }
   }
 
-  async function loadReport(jobId: string): Promise<void> {
+  async function loadReport(jobId: string, navigate = true): Promise<void> {
+    setReportLoadError(null);
     try {
       const artifactPayload = await api.getArtifacts(jobId);
       let reportPayload: PrimaryReport;
@@ -684,19 +846,35 @@ export function App() {
         executive_summary: reportPayload.executive_summary ?? evaluation.executive_summary,
       });
       setArtifacts(artifactPayload.artifacts);
-      setGlobalStatus("합성 데이터와 담당자용 종합 보고서가 준비되었습니다.");
-      moveTo("report");
+      if (navigate) {
+        setReportReady(false);
+        setGlobalStatus("합성 데이터와 담당자용 종합 보고서가 준비되었습니다.");
+        moveTo("report");
+      } else {
+        // Do not yank the user away from what they are doing; unlock the report step instead.
+        setHighestStage((current) => Math.max(current, STAGES.length - 1));
+        setReportReady(true);
+        setGlobalStatus("합성이 끝났습니다. '결과 보기'를 누르면 보고서로 이동합니다.");
+      }
     } catch (reportError) {
-      setError(displayError(reportError));
+      const message = displayError(reportError);
+      setReportLoadError(message);
+      setError(message);
+      setGlobalStatus("합성은 끝났지만 보고서를 불러오지 못했습니다. '보고서 다시 불러오기'를 누르세요.");
     }
   }
 
   function connectToJob(jobId: string): void {
     eventSource.current?.close();
+    setConnectionLost(false);
     const source = new EventSource(`/api/v1/jobs/${jobId}/events`);
     eventSource.current = source;
     let terminalSeen = false;
+    let consecutiveErrors = 0;
+    let lastMessageAt = Date.now();
     const handleEvent = (message: MessageEvent<string>): void => {
+      consecutiveErrors = 0;
+      lastMessageAt = Date.now();
       try {
         const payload = JSON.parse(message.data) as ProgressEventPayload;
         setJobProgress(payload);
@@ -704,7 +882,9 @@ export function App() {
         if (payload.state === "succeeded") {
           terminalSeen = true;
           source.close();
-          void loadReport(jobId);
+          setJob((current) => (current && current.job_id === jobId ? { ...current, state: "succeeded", progress: payload } : current));
+          // Only pull the user to the report when they are watching the progress stage.
+          void loadReport(jobId, stageRef.current === "progress");
         } else if (payload.state === "cancelled" || payload.state === "failed") {
           terminalSeen = true;
           source.close();
@@ -718,9 +898,21 @@ export function App() {
     source.addEventListener("progress", handleEvent as EventListener);
     source.addEventListener("terminal", handleEvent as EventListener);
     source.onerror = () => {
-      if (!terminalSeen) {
-        setGlobalStatus("진행 연결을 복구하고 있습니다. 완료된 이벤트는 서버에서 다시 재생됩니다.");
+      if (terminalSeen) return;
+      consecutiveErrors += 1;
+      const silentFor = Date.now() - lastMessageAt;
+      if (
+        source.readyState === EventSource.CLOSED
+        || consecutiveErrors >= SSE_MAX_CONSECUTIVE_ERRORS
+        || silentFor >= SSE_SILENCE_LIMIT_MS
+      ) {
+        source.close();
+        if (eventSource.current === source) eventSource.current = null;
+        setConnectionLost(true);
+        setGlobalStatus(SSE_DISCONNECTED_STATUS);
+        return;
       }
+      setGlobalStatus("진행 연결을 복구하고 있습니다. 완료된 이벤트는 서버에서 다시 재생됩니다.");
     };
   }
 
@@ -804,6 +996,9 @@ export function App() {
     setError(null);
     setReport(null);
     setArtifacts([]);
+    setReportReady(false);
+    setReportLoadError(null);
+    setConnectionLost(false);
     setHighestStage((current) => Math.min(current, 4));
     try {
       const snapshot = await api.createJob(request);
@@ -895,7 +1090,7 @@ export function App() {
                 type="button"
                 disabled={index > highestStage}
                 aria-current={index === currentStageIndex ? "step" : undefined}
-                onClick={() => moveTo(item.id)}
+                onClick={() => void navigateTo(item.id)}
               >
                 <span className="step-number" aria-hidden="true">{index < currentStageIndex ? "✓" : index + 1}</span>
                 <span><strong>{item.label}</strong><small>{item.hint}</small></span>
@@ -910,7 +1105,19 @@ export function App() {
         <div className="global-status" role="status" aria-live="polite">
           <span aria-hidden="true">{error ? "!" : sessionReady ? "✓" : "…"}</span>
           <span>{globalStatus}</span>
+          {reportReady && stage !== "report" && (
+            <button className="button secondary" type="button" onClick={() => { setReportReady(false); moveTo("report"); }}>
+              결과 보기
+            </button>
+          )}
         </div>
+        {datasetProgress && (
+          <div className="progress-block">
+            <div className="progress-copy"><strong>{DATASET_STAGE_LABELS[datasetProgress.stage] ?? datasetProgress.stage}</strong><span>{Math.round((datasetProgress.completed / Math.max(datasetProgress.total, 1)) * 100)}%</span></div>
+            <progress max={100} value={Math.round((datasetProgress.completed / Math.max(datasetProgress.total, 1)) * 100)} aria-label="데이터셋 처리 진행률" />
+            <p>{datasetProgress.completed.toLocaleString("ko-KR")} / {datasetProgress.total.toLocaleString("ko-KR")} {datasetProgress.unit ?? "단계"}</p>
+          </div>
+        )}
         {error && <div className="error-banner" role="alert"><strong>처리할 수 없음</strong><span>{error}</span></div>}
 
         <section className="stage-panel" aria-labelledby="stage-heading">
@@ -992,7 +1199,7 @@ export function App() {
                   <thead><tr><th scope="col">열 / 관찰값</th><th scope="col">유형</th><th scope="col">역할</th><th scope="col">결측</th></tr></thead>
                   <tbody>{visibleColumns.map(({ column, index, profile: observed }) => {
                     return <tr key={column.name}>
-                      <th scope="row"><strong>{column.name}</strong><small>{observed?.approx_cardinality.toLocaleString("ko-KR")}개 고유값 추정 · null {observed?.null_count.toLocaleString("ko-KR")}</small>{observed?.candidate_requires_confirmation && <span className="inline-warning">확인 필요</span>}</th>
+                      <th scope="row"><strong>{column.name}</strong><small>{observed ? `${observed.approx_cardinality.toLocaleString("ko-KR")}개 고유값 추정 · null ${observed.null_count.toLocaleString("ko-KR")}` : "프로파일 정보 없음 · —"}</small>{observed?.candidate_requires_confirmation && <span className="inline-warning">확인 필요</span>}</th>
                       <td><label className="cell-label"><span className="visually-hidden">{column.name} 유형</span><select value={column.kind} onChange={(event) => updateColumn(index, { kind: event.target.value as ColumnKind })}>{Object.entries(KIND_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>{column.kind === "fixed_decimal" && <label className="compact-field">소수 자릿수<input type="number" min={0} max={18} value={column.decimal_places ?? 2} onChange={(event) => updateColumn(index, { decimal_places: Number(event.target.value) })} /></label>}</td>
                       <td><label className="cell-label"><span className="visually-hidden">{column.name} 역할</span><select value={column.role} disabled={column.kind === "identifier" || column.kind === "excluded"} onChange={(event) => updateColumn(index, { role: event.target.value as ColumnRole })}>{Object.entries(ROLE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label></td>
                       <td><label className="checkbox-row compact"><input type="checkbox" checked={column.nullable} onChange={(event) => updateColumn(index, { nullable: event.target.checked })} /><span>허용</span></label></td>
@@ -1108,10 +1315,10 @@ export function App() {
           {stage === "progress" && job && (
             <>
               <div className="stage-heading-row"><div><p className="section-label">05 · Execution</p><h2 id="stage-heading" tabIndex={-1}>합성 작업 진행</h2></div><p className="stage-note">시도 {job.attempt ?? 1}</p></div>
-              <div className="job-overview" role="status" aria-live="polite" aria-atomic="true"><div><span className="status-symbol" aria-hidden="true">{job.state === "cancelled" || job.state === "failed" ? "!" : "↻"}</span><div><strong>{JOB_STAGE_LABELS[jobProgress?.stage ?? job.state] ?? job.state}</strong><span>작업 ID {job.job_id}</span></div></div><strong>{jobPercent}%</strong></div>
+              <div className="job-overview" aria-live="off"><div><span className="status-symbol" aria-hidden="true">{job.state === "cancelled" || job.state === "failed" ? "!" : "↻"}</span><div><strong>{JOB_STAGE_LABELS[jobProgress?.stage ?? job.state] ?? job.state}</strong><span>작업 ID {job.job_id}</span></div></div><strong>{jobPercent}%</strong></div>
               <progress className="job-progress" max={100} value={jobPercent} aria-label="합성 작업 진행률" aria-valuetext={`${JOB_STAGE_LABELS[jobProgress?.stage ?? job.state] ?? job.state} ${jobPercent}%`}>{jobPercent}%</progress>
               <ol className="pipeline-list" aria-label="서버 처리 단계">{["preparing", "fitting", "generating", "repairing", "evaluating", "exporting", "publishing"].map((pipelineStage) => { const known = Object.keys(JOB_STAGE_LABELS).indexOf(jobProgress?.stage ?? job.state); const index = Object.keys(JOB_STAGE_LABELS).indexOf(pipelineStage); return <li key={pipelineStage} data-state={pipelineStage === (jobProgress?.stage ?? job.state) ? "current" : index < known ? "complete" : "upcoming"}><span aria-hidden="true">{index < known ? "✓" : pipelineStage === (jobProgress?.stage ?? job.state) ? "→" : "·"}</span>{JOB_STAGE_LABELS[pipelineStage]}</li>; })}</ol>
-              <div className="action-row"><p>페이지를 다시 열어도 retained SSE 이벤트를 마지막 ID부터 재생할 수 있습니다.</p>{job.legal_actions?.includes("resume") || job.state === "cancelled" ? <button className="button primary" type="button" disabled={busy} onClick={() => void resumeJob()}>새 작업으로 재개</button> : <button className="button danger" type="button" disabled={busy || ["succeeded", "failed"].includes(job.state)} onClick={() => void cancelJob()}>작업 취소</button>}</div>
+              <div className="action-row"><p>페이지를 다시 열어도 retained SSE 이벤트를 마지막 ID부터 재생할 수 있습니다.</p>{connectionLost && <button className="button secondary" type="button" onClick={() => connectToJob(job.job_id)}>다시 연결</button>}{reportLoadError && job.state === "succeeded" && <button className="button primary" type="button" onClick={() => void loadReport(job.job_id, true)}>보고서 다시 불러오기</button>}{job.legal_actions?.includes("resume") || job.state === "cancelled" ? <button className="button primary" type="button" disabled={busy} onClick={() => void resumeJob()}>새 작업으로 재개</button> : <button className="button danger" type="button" disabled={busy || ["succeeded", "failed"].includes(job.state)} onClick={() => void cancelJob()}>작업 취소</button>}</div>
             </>
           )}
 

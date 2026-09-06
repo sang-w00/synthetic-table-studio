@@ -43,13 +43,31 @@ DATASET_TRANSITIONS: dict[DatasetState, frozenset[DatasetState]] = {
     DatasetState.NORMALIZING: frozenset(
         {DatasetState.NORMALIZED, DatasetState.FAILED, DatasetState.PROFILED}
     ),
-    DatasetState.NORMALIZED: frozenset(),
-    DatasetState.FAILED: frozenset(),
+    # Reopen edges: a normalized (or schema-ready) dataset can be returned to the
+    # schema step so its schema and rules can be edited and normalization re-run.
+    DatasetState.NORMALIZED: frozenset({DatasetState.PROFILED}),
+    # Retry returns a failed dataset to the stable state that precedes the failed
+    # operation, from which the same operation is dispatched again.
+    DatasetState.FAILED: frozenset(
+        {DatasetState.STAGED, DatasetState.RAW_READY, DatasetState.SCHEMA_READY}
+    ),
 }
+DATASET_TRANSITIONS[DatasetState.SCHEMA_READY] = frozenset(
+    {DatasetState.NORMALIZING, DatasetState.PROFILED}
+)
 
 DATASET_RETRY_STATES = frozenset(
     {DatasetState.INSPECTING, DatasetState.PROFILING, DatasetState.NORMALIZING}
 )
+
+# Failed operation -> the stable state the dataset is returned to on retry.
+DATASET_RETRY_RESTART_STATES: dict[DatasetState, DatasetState] = {
+    DatasetState.INSPECTING: DatasetState.STAGED,
+    DatasetState.PROFILING: DatasetState.RAW_READY,
+    DatasetState.NORMALIZING: DatasetState.SCHEMA_READY,
+}
+
+DATASET_REOPEN_STATES = frozenset({DatasetState.NORMALIZED, DatasetState.SCHEMA_READY})
 
 
 class JobState(StrEnum):

@@ -28,6 +28,32 @@
 
 ### Fixed
 
+- 프로파일러가 소수 열을 `정수`로 제안하던 근본 원인을 고쳤습니다. DuckDB 1.5는 `'1.2'`를
+  BIGINT로 캐스팅할 때 반올림해 성공시키므로 castability만 보던 제안이 정규화기의 정수 판정과
+  어긋났습니다. 이제 제안이 정규화기와 같은 판정식을 사용합니다.
+- 형식적 DP 경로에서 `fixed_combination`·`compare` 규칙이 있는 작업이 ε을 다 쓴 뒤 항상
+  실패하던 문제를 고쳤습니다. 공개 `allowed_tuples`만으로 codecs를 만들고, codebook이 실체화한
+  열은 latent 복원 없이 공개 tuple에 직접 대조합니다.
+- DP 작업 막바지의 취소가 CANCELLED 작업에 release-safe 산출물을 남기던 경합을 막았습니다.
+  ledger RELEASED 전이 이후 단계는 취소를 받지 않고, `dp_release` scope 조회는 실패·취소
+  작업에 빈 목록을 돌려줍니다.
+- dpmm worker가 감사 대상 RNG 정책을 우회하고 원본 선택 행 수를 노출하던 문제를 고쳤습니다.
+  worker는 `PrivateFitRng` 도출을 그대로 미러링해 commitment만 보고하며, 이 commitment가
+  ledger와 공개 보고서까지 전달됩니다. worker가 commitment를 내지 않으면 작업이 실패합니다.
+- 데이터셋 retry가 진행 불가 상태로 되돌리던 문제를 고쳤습니다. 실패 직전 안정 상태로
+  돌아가 같은 작업을 즉시 재실행합니다.
+- 정규화된 데이터셋의 스키마·규칙을 다시 편집할 수 있습니다(`POST /datasets/{id}/reopen`).
+  실행 중인 작업이 있으면 거부합니다.
+- 업로드 PATCH가 크기 검사 전에 본문 전체를 메모리에 올리던 문제를 고쳤습니다. 한도를 넘는
+  순간 중단하고, 디스크 쓰기는 이벤트 루프 밖에서 합니다.
+- repository 읽기가 락을 우회해 커밋되지 않은 쓰기를 볼 수 있던 문제, 상태 조회가 이벤트
+  전체를 재생하던 문제를 고쳤습니다.
+- 화면: 작업 완료 시 강제 이동 대신 "결과 보기"; 프로파일을 이름으로 결합; 업로드 재시도
+  지수 백오프와 fingerprint 기반 재개; 보고서 재로드·SSE 재연결 버튼; 프로파일·정규화 진행률
+  표시; 중복 live region 제거; `vite` 개발 서버 `/api` 프록시.
+- openpyxl 변환 경로에도 DOCTYPE·엔티티 선언 가드를 적용합니다.
+- Playwright spec 5건을 현재 UI에 맞춰 갱신했고, `eslint-plugin-react-hooks`를 활성화했습니다.
+
 - 열 유형을 잘못 지정해 정규화가 실패하면 데이터셋이 `failed`로 끝나 버려 되돌릴 수 없었고,
   사용자가 다시 시도하면 `INVALID_STATE: rules can only be saved after schema validation and
   before normalization`이라는 원인과 무관한 오류만 보였습니다. 이제 캐스팅 실패는 사용자가

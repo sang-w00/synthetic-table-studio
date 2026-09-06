@@ -103,6 +103,7 @@ DP_LEDGER_ALLOWLIST = frozenset(
         "delta_total",
         "spent_runs",
         "lock_sha256",
+        "rng_policy",
         "rule_postprocessing",
         "limitations",
     }

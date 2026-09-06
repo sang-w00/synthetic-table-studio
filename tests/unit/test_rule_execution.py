@@ -20,6 +20,7 @@ from sts.rules.compiler import compile_rules
 from sts.rules.execution import (
     audit_and_filter_source,
     audit_source,
+    build_public_codecs,
     full_validate,
     mask_prefix,
     prepare_model_batch,
@@ -630,3 +631,48 @@ def test_global_budget_exhaustion_publishes_no_artifact(tmp_path: Path) -> None:
     }
     assert not output_path.exists()
     assert not list(tmp_path.glob("*.part"))
+
+
+def test_materialized_dp_batch_validates_fixed_combination_against_public_tuples() -> (
+    None
+):
+    """The formal-DP path decodes every column from the public codebook, so there is
+    no ARGN latent to reconstruct: the rule must be checked directly and must use
+    public tuples only."""
+
+    columns = (
+        column("sex", ColumnKind.CATEGORICAL, nullable=False),
+        column("industry", ColumnKind.CATEGORICAL, nullable=False),
+    )
+    rule = FixedCombinationRule(
+        id="sex-industry",
+        provenance=PUBLIC,
+        columns=("sex", "industry"),
+        allowed_tuples=(("1", "I"), ("2", "I")),
+    )
+    compiled = compile_rules(columns, (rule,), mode="differential_privacy")
+    codecs = build_public_codecs(compiled)
+    assert codecs.tuples_for(rule) == (("1", "I"), ("2", "I"))
+
+    decoded = pa.table({"sex": ["1", "2"], "industry": ["I", "I"]})
+    checked = repair_and_validate_candidate(
+        decoded, compiled, codecs=codecs, materialized=True
+    )
+    assert checked.report.violation_union_count == 0
+    assert checked.table.to_pydict()["sex"] == ["1", "2"]
+
+    # Without the flag the ARGN-oriented path looks for a latent that a codebook-
+    # decoded batch never has, nulls both columns and marks every row invalid — the
+    # failure that made every DP job with such a rule fail after spending epsilon.
+    legacy = full_validate(
+        reconstruct_batch(decoded, compiled, codecs=codecs), compiled, codecs=codecs
+    )
+    assert legacy.report.violation_union_count == decoded.num_rows
+    assert legacy.table.to_pydict()["sex"] == [None, None]
+
+    # A decoded row outside the public tuple set is a genuine violation.
+    bad = pa.table({"sex": ["1", "9"], "industry": ["I", "I"]})
+    flagged = repair_and_validate_candidate(
+        bad, compiled, codecs=codecs, materialized=True
+    )
+    assert flagged.report.violation_union_count == 1
