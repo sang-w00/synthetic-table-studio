@@ -42,7 +42,7 @@
 아래 중 로컬 디스크 workspace만 해당하며, Python·Node·uv는 필요하지 않습니다
 ([오프라인 배포](#오프라인-배포-설치-없이-실행) 참고).
 
-- macOS 또는 Linux
+- macOS 또는 Linux. Windows는 오프라인 번들로만 지원합니다([아래](#2-windows-x86_64-번들) 참고)
 - Python 3.11/3.12와 [uv](https://docs.astral.sh/uv/)
 - Node.js 22와 npm
 - 로컬 디스크 workspace. 네트워크 파일시스템은 fsync/rename 보장을 별도로 검증하기 전에는 사용하지 마십시오.
@@ -67,11 +67,14 @@ cd web && npm ci && cd ..
 
 ## 오프라인 배포 (설치 없이 실행)
 
-인터넷이 없거나 Python·Node를 설치할 수 없는 리눅스 장비에서는 자체 포함 번들을 씁니다.
-압축을 풀고 `./run.sh` 하나로 실행되며, 대상 장비에 Python, Node, pip, uv, 네트워크가
-모두 필요하지 않습니다.
+인터넷이 없거나 Python·Node를 설치할 수 없는 장비에서는 자체 포함 번들을 씁니다. Linux와
+Windows용이 있고, 압축을 푼 뒤 실행 파일 하나로 시작합니다. 대상 장비에 Python, Node,
+pip, uv, 네트워크가 모두 필요하지 않습니다.
 
-### 1. 미리 빌드된 번들 내려받기 (Linux x86_64)
+두 번들 모두 리눅스 장비에서 교차 빌드했으므로 빌드 시점의 자체 점검이 생략되어 있습니다.
+처음 실행하기 전에 각 절이 안내하는 네 줄 점검을 대상 장비에서 수행하십시오.
+
+### 1. Linux x86_64 번들
 
 - 파일: [`synthetic-table-studio-offline-linux-x86_64.tar.gz`](https://drive.google.com/file/d/1iSRH-q973CRnHk136-xNXyrBU2wHqAGg/view?usp=sharing) (3.1 GB, 해제 후 6.1 GB)
 - SHA-256: `39e6eedb71773f986c7fe7ddd51c4b234b55548efeb69c6be3e749b5cfca8627`
@@ -89,8 +92,7 @@ tar -xzf synthetic-table-studio-offline-linux-x86_64.tar.gz
 cd synthetic-table-studio-offline-linux-x86_64
 ```
 
-이 번들은 aarch64 장비에서 x86_64 대상으로 교차 빌드했으므로 빌드 시점의 자체 점검이
-생략되어 있습니다. 처음 실행하기 전에 네 환경의 적재를 한 번 확인하십시오.
+처음 실행하기 전에 네 개의 실행 환경이 적재되는지 확인하십시오.
 
 ```bash
 app/.venv/bin/python          -c "import duckdb, pyarrow, fastapi, pydantic; print('app ok')"
@@ -99,7 +101,7 @@ workers/dpmm/.venv/bin/python -c "import numpy, pandas; print('dpmm ok')"
 workers/eval/.venv/bin/python -c "import numpy, scipy, sklearn; print('eval ok')"
 ```
 
-### 2. 실행
+Linux 번들 실행:
 
 ```bash
 ./run.sh
@@ -115,6 +117,40 @@ STS_WORKSPACE=/data/studio STS_PORT=9000 STS_HOST=127.0.0.1 ./run.sh
 `run.sh`는 loopback 기본값을 포함해 `scripts/serve`와 같은 보안 정책을 그대로 따릅니다.
 작업 폴더는 로컬 디스크에 두십시오.
 
+### 2. Windows x86_64 번들
+
+- 파일: `synthetic-table-studio-offline-windows-x86_64.zip` (678 MB, 해제 후 2.0 GB)
+- SHA-256: `830bbc6166fca1a99ffcd77cdda8617fe582315ca6cbf74196de0d5b239569c3`
+- 요구 사항: Windows 10 64비트 이상, x86_64
+
+압축을 풀고, 명령 프롬프트에서 네 개의 실행 환경을 확인한 뒤 `run.bat`을 실행합니다.
+
+```bat
+app\.venv\python.exe          -c "import duckdb, pyarrow, fastapi, pydantic; print('app ok')"
+workers\argn\.venv\python.exe -c "import torch; print('argn ok', torch.__version__)"
+workers\dpmm\.venv\python.exe -c "import numpy, pandas; print('dpmm ok')"
+workers\eval\.venv\python.exe -c "import numpy, scipy, sklearn; print('eval ok')"
+
+run.bat
+```
+
+브라우저에서 `http://127.0.0.1:8765`를 엽니다. 작업 폴더와 포트는 `STS_WORKSPACE`,
+`STS_PORT`, `STS_HOST` 환경 변수로 바꿉니다. 경로가 깊으면 Windows의 260자 경로 길이
+제한에 걸릴 수 있으므로 `C:\sts` 같은 짧은 경로에 푸십시오. 번들 안 `INSTALL.txt`에 같은
+내용이 들어 있습니다.
+
+Windows에서 달라지는 점은 세 가지입니다.
+
+- **합성 엔진이 CPU에서만 동작합니다.** PyPI가 배포하는 Windows용 `torch`에는 CUDA가
+  들어 있지 않습니다. 대용량 자료는 Linux + GPU 환경보다 느립니다.
+- **공개(publish) 시 디렉터리 fsync 단계가 없습니다.** Windows에는 디렉터리를 열어
+  메타데이터를 강제로 내릴 방법이 없습니다. 파일 내용은 이름을 바꾸기 전에 그대로
+  flush 하지만, 이름이 확정되는 순간의 내구성은 POSIX보다 약합니다. 비정상 종료
+  직후에는 마지막 산출물을 확인하십시오.
+- **심볼릭 링크 추적 방지(`O_NOFOLLOW`)가 적용되지 않습니다.** Windows에서 심볼릭 링크
+  생성은 권한이 필요한 동작이므로 단일 사용자 localhost 환경에서는 문제가 되지
+  않지만, 보장 자체는 POSIX 쪽에만 있습니다.
+
 ### 3. 직접 빌드하기
 
 다른 아키텍처·배포판이 필요하거나 공급망을 직접 재현하려면 네트워크가 되는 리눅스
@@ -123,22 +159,29 @@ STS_WORKSPACE=/data/studio STS_PORT=9000 STS_HOST=127.0.0.1 ./run.sh
 ```bash
 ./scripts/build-offline-bundle                       # 빌드 장비와 같은 아키텍처
 TARGET_ARCH=x86_64 ./scripts/build-offline-bundle    # 교차 빌드 (예: aarch64 → x86_64)
+TARGET_OS=windows ./scripts/build-offline-bundle     # Windows x86_64 번들 (zip)
 ```
 
 `TARGET_GLIBC`(기본 `2.35`)로 manylinux 태그를, `SKIP_WEB_BUILD=1`로 이미 빌드된
 `web/dist` 재사용을 지정할 수 있습니다. 교차 빌드에서는 대상 인터프리터를 실행할 수 없어
-빌드 시점 자체 점검이 생략되므로, 위 네 줄 점검을 대상 장비에서 수행하십시오.
+빌드 시점 자체 점검이 생략되므로, 위 네 줄 점검을 대상 장비에서 수행하십시오. Windows
+번들은 언제나 교차 빌드이며 `PBS_TAG`로 python-build-standalone 릴리스를 고정할 수
+있습니다.
 
 ### 번들 구성과 크기
 
 번들은 이 저장소의 네 환경 분리를 그대로 유지합니다. 그 분리는 구현 편의가 아니라
 프라이버시 경계이므로, 하나의 실행 파일로 합치지 않습니다. 각 `.venv/bin/python`은 번들
 위치를 스스로 찾아 해당 환경의 패키지만 `PYTHONPATH`에 올리는 셸 shim이며, 절대 경로를
-쓰지 않으므로 어디에 풀어도 동작합니다. 재배치 가능한 CPython 3.11·3.12와 빌드된 웹
-인터페이스가 함께 들어가고, 패키지 버전은 커밋된 `uv.lock`에서 나오므로 보고서가 인용하는
-공급망과 배포본이 일치합니다.
+쓰지 않으므로 어디에 풀어도 동작합니다. Windows에는 셸 shim이 없으므로 환경마다 인터프리터
+사본을 `<환경>/.venv`에 두고, 그 인터프리터의 `site-packages`에 해당 환경의 vendor 폴더만
+가리키는 `.pth` 파일을 넣습니다. 결과적으로 네 환경의 분리는 양쪽에서 동일합니다. 재배치
+가능한 CPython 3.11·3.12와 빌드된 웹 인터페이스가 함께 들어가고, 패키지 버전은 커밋된
+`uv.lock`에서 나오므로 보고서가 인용하는 공급망과 배포본이 일치합니다.
 
-해제 후 6.1 GB 중 2.7 GB가 `torch`가 요구하는 NVIDIA CUDA 런타임입니다. GPU를 쓰지 않는
+Linux 번들은 해제 후 6.1 GB이며 그중 2.7 GB가 `torch`가 요구하는 NVIDIA CUDA 런타임입니다.
+Windows 번들이 2.0 GB로 작은 것은 같은 이유의 뒷면으로, Windows용 `torch`에 CUDA가 없기
+때문입니다. GPU를 쓰지 않는 Linux
 대상이라면 `workers/argn`을 CPU 전용 torch로 고정해 1 GB 미만으로 줄일 수 있지만, 그러면
 `workers/argn/uv.lock`과 SBOM·probe를 다시 만들어야 하고 DP 공개 보고서에 실리는
 `wheel_sha256`이 달라집니다.
@@ -218,6 +261,8 @@ capacity estimate는 production capacity proof가 아닙니다.
 - job terminal 상태는 immutable합니다. 취소된 job은 새 job ID로만 resume합니다.
 - worker stdout은 비어 있어야 하며 request/result/events JSON 파일만 프로토콜로 사용합니다.
 - resource admission은 disk ceiling과 worker RSS lease를 보수적으로 예약합니다.
+- Windows에서는 디렉터리 fsync가 없어 publish의 내구성이 POSIX보다 약하고, 합성 엔진이
+  CPU에서만 동작합니다. 두 가지 모두 오프라인 배포 절에 적어 두었습니다.
 - L40S 48 GB ×4 production gate는 해당 host에서 별도 실행해야 합니다. M4 결과만으로 55M×70 production readiness를 선언하지 마십시오.
 
 ## 라이선스

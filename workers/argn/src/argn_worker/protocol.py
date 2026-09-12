@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 import os
+import sys
 import re
 from dataclasses import dataclass
 from datetime import datetime
@@ -419,6 +420,12 @@ def _write_all(fd: int, data: bytes) -> None:
 
 
 def fsync_directory(path: Path) -> None:
+    # Windows offers no directory handle to flush, so the rename's metadata is
+    # committed on the filesystem's own schedule instead of on demand. The file
+    # contents are still fsynced before the rename; only the durability of the
+    # name itself is weaker there.
+    if sys.platform == "win32":  # pragma: no cover - exercised on Windows only
+        return
     fd = os.open(path, os.O_RDONLY)
     try:
         os.fsync(fd)

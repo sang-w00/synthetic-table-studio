@@ -21,19 +21,37 @@
 # wheels for the target without executing them, so the self-check is skipped and
 # must be run on a target machine (`run.sh --help` and `scripts/verify`).
 # TARGET_GLIBC (default 2.35 = Ubuntu 22.04) picks the manylinux tag.
+#
+# TARGET_OS=windows builds a Windows x86_64 bundle instead. Windows has no
+# equivalent of the shell shim, so each environment gets its own interpreter copy
+# under `<env>/.venv` and a `.pth` file in that interpreter's site-packages
+# naming the matching vendor directory. The four environments stay as separated
+# there as they are on POSIX. The launcher is `run.bat` and the bundle is a zip.
+# A Windows build is always a cross-build: nothing is executed at build time, so
+# the self-check belongs on the target machine.
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
 OUT=${1:-"$ROOT/var/offline-bundle"}
 HOST_ARCH=$(uname -m)
 ARCH=${TARGET_ARCH:-$HOST_ARCH}
+TARGET_OS=${TARGET_OS:-linux}
 TARGET_GLIBC=${TARGET_GLIBC:-2.35}
 CROSS=0
 [ "$ARCH" != "$HOST_ARCH" ] && CROSS=1
-STAGE="$OUT/synthetic-table-studio-offline-linux-$ARCH"
+[ "$TARGET_OS" = windows ] && CROSS=1
+STAGE="$OUT/synthetic-table-studio-offline-$TARGET_OS-$ARCH"
 
 PY311_TAG=3.11
 PY312_TAG=3.12
+
+case "$TARGET_OS" in
+    linux) ;;
+    windows)
+        [ "$ARCH" = x86_64 ] || { echo "the Windows bundle is only built for x86_64" >&2; exit 1; }
+        ;;
+    *) echo "TARGET_OS must be linux or windows, not $TARGET_OS" >&2; exit 1 ;;
+esac
 
 echo "==> staging into $STAGE"
 if [ -e "$STAGE" ]; then
@@ -62,6 +80,85 @@ done
 for worker in argn dpmm eval; do
     tar -C "$ROOT" --exclude='__pycache__' -cf - "workers/$worker/src" | tar -C "$STAGE" -xf -
 done
+
+if [ "$TARGET_OS" = windows ]; then
+
+echo "==> fetching Windows CPython $PY311_TAG and $PY312_TAG"
+# uv cannot install a Windows interpreter from a POSIX host: it wants to create
+# symlinks the Windows archive has no counterpart for. The python-build-standalone
+# archive uv itself would use is therefore fetched and unpacked directly.
+PBS_TAG=${PBS_TAG:-$(curl -fsS \
+    https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest \
+    | sed -n 's/.*"tag_name"[: ]*"\([^"]*\)".*/\1/p' | head -1)}
+[ -n "$PBS_TAG" ] || { echo "could not determine the python-build-standalone release" >&2; exit 1; }
+echo "    python-build-standalone $PBS_TAG"
+PBS_LISTING="$OUT/pbs-$PBS_TAG.json"
+[ -f "$PBS_LISTING" ] || curl -fsS \
+    "https://api.github.com/repos/astral-sh/python-build-standalone/releases/tags/$PBS_TAG" \
+    -o "$PBS_LISTING"
+
+windows_interpreter () { # $1=X.Y  $2=destination .venv directory
+    asset=$(tr ',' '\n' < "$PBS_LISTING" \
+        | sed -n 's/.*"\(cpython-'"$1"'\.[0-9]*+[0-9]*-x86_64-pc-windows-msvc-install_only_stripped\.tar\.gz\)".*/\1/p' \
+        | head -1)
+    [ -n "$asset" ] || { echo "no Windows $1 asset in $PBS_TAG" >&2; exit 1; }
+    echo "    $asset"
+    mkdir -p "$2"
+    # The archive holds one python/ directory; its contents become the virtualenv
+    # root, so python.exe sits beside the Lib and DLLs it resolves relative to.
+    curl -fsSL \
+        "https://github.com/astral-sh/python-build-standalone/releases/download/$PBS_TAG/$asset" \
+        | tar -xz -C "$2" --strip-components=1
+    [ -f "$2/python.exe" ] || { echo "unpacked $1 has no python.exe" >&2; exit 1; }
+}
+windows_interpreter "$PY312_TAG" "$STAGE/app/.venv"
+for worker in argn dpmm eval; do
+    windows_interpreter "$PY311_TAG" "$STAGE/workers/$worker/.venv"
+done
+
+echo "==> vendoring locked dependencies (versions come from uv.lock, not a fresh resolve)"
+vendor_windows () { # $1=project dir  $2=vendor name  $3=python version  $4=venv dir  $5=hops to root
+    requirements="$OUT/requirements-$2.txt"
+    ( cd "$ROOT/$1" && uv export --frozen --no-hashes --no-dev --no-emit-project -o "$requirements" )
+    uv pip install --python-version "$3" --python-platform x86_64-pc-windows-msvc \
+        --only-binary :all: --no-compile-bytecode \
+        --target "$STAGE/vendor/$2" -r "$requirements"
+    # site reads .pth files in site-packages and resolves relative entries against
+    # that directory, so this puts exactly one vendor tree on sys.path without
+    # PYTHONPATH and without letting the four environments see each other.
+    site="$4/Lib/site-packages"
+    mkdir -p "$site"
+    printf '%svendor\\%s\r\n' "$5" "$2" > "$site/_sts_vendor.pth"
+}
+vendor_windows app          app  "$PY312_TAG" "$STAGE/app/.venv"          '..\..\..\..\'
+vendor_windows workers/argn argn "$PY311_TAG" "$STAGE/workers/argn/.venv" '..\..\..\..\..\'
+vendor_windows workers/dpmm dpmm "$PY311_TAG" "$STAGE/workers/dpmm/.venv" '..\..\..\..\..\'
+vendor_windows workers/eval eval "$PY311_TAG" "$STAGE/workers/eval/.venv" '..\..\..\..\..\'
+
+echo "==> writing the launcher"
+{
+    printf '@echo off\r\n'
+    printf 'rem Start Synthetic Table Studio. No installation, no network, no system Python.\r\n'
+    printf 'setlocal\r\n'
+    printf 'set "STS_SERVE_VENV=1"\r\n'
+    printf 'if not defined STS_WORKSPACE set "STS_WORKSPACE=%%~dp0workspace"\r\n'
+    printf 'if not defined STS_HOST set "STS_HOST=127.0.0.1"\r\n'
+    printf 'if not defined STS_PORT set "STS_PORT=8765"\r\n'
+    printf '"%%~dp0app\\.venv\\python.exe" "%%~dp0scripts\\serve" ^\r\n'
+    printf '  --workspace "%%STS_WORKSPACE%%" ^\r\n'
+    printf '  --host "%%STS_HOST%%" ^\r\n'
+    printf '  --port "%%STS_PORT%%" ^\r\n'
+    printf '  --skip-web-build %%*\r\n'
+} > "$STAGE/run.bat"
+
+echo "==> self-check skipped (Windows bundle built on a POSIX host)"
+echo "    on the target machine run: run.bat --help"
+
+echo "==> packaging"
+( cd "$OUT" && zip -qry "$(basename "$STAGE").zip" "$(basename "$STAGE")" )
+ARCHIVE="$STAGE.zip"
+
+else
 
 echo "==> fetching relocatable CPython $PY311_TAG and $PY312_TAG"
 mkdir -p "$STAGE/python"
@@ -155,6 +252,10 @@ fi
 
 echo "==> packaging"
 tar -C "$OUT" -czf "$STAGE.tar.gz" "$(basename "$STAGE")"
-echo "bundle:    $STAGE.tar.gz"
-echo "size:      $(du -h "$STAGE.tar.gz" | cut -f1) compressed, $(du -sh "$STAGE" | cut -f1) extracted"
-echo "sha256:    $(sha256sum "$STAGE.tar.gz" | cut -d' ' -f1)"
+ARCHIVE="$STAGE.tar.gz"
+
+fi
+
+echo "bundle:    $ARCHIVE"
+echo "size:      $(du -h "$ARCHIVE" | cut -f1) compressed, $(du -sh "$STAGE" | cut -f1) extracted"
+echo "sha256:    $(sha256sum "$ARCHIVE" | cut -d' ' -f1)"

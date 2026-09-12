@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-import fcntl
 import hashlib
 import os
 import stat
@@ -18,6 +17,7 @@ from sts.domain import (
 )
 
 from .layout import WorkspaceLayout
+from .portable import fsync_directory, lock_exclusive, unlock
 
 _CHUNK_SIZE = 1024 * 1024
 
@@ -28,15 +28,6 @@ class PublishedFile:
     path: Path
     sha256: str
     size_bytes: int
-
-
-def _fsync_directory(directory: Path) -> None:
-    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-    descriptor = os.open(directory, flags)
-    try:
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
 
 
 def _open_regular_readonly(path: Path) -> int:
@@ -198,19 +189,19 @@ class AtomicPublisher:
                     "temporary artifact size does not match the expected size",
                     context={"expected_size": expected_size, "actual_size": size},
                 )
-            _fsync_directory(destination.parent)
+            fsync_directory(destination.parent)
             lock_descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
             try:
-                fcntl.flock(lock_descriptor, fcntl.LOCK_EX)
+                lock_exclusive(lock_descriptor)
                 if destination.exists() or destination.is_symlink():
                     raise DomainError(
                         ErrorCode.IMMUTABLE_PATH_EXISTS,
                         f"immutable artifact path already exists: {relative_path}",
                     )
                 os.rename(part, destination)
-                _fsync_directory(destination.parent)
+                fsync_directory(destination.parent)
             finally:
-                fcntl.flock(lock_descriptor, fcntl.LOCK_UN)
+                unlock(lock_descriptor)
                 os.close(lock_descriptor)
             return PublishedFile(relative_path, destination, actual_sha256, size)
         except Exception:
@@ -218,5 +209,5 @@ class AtomicPublisher:
                 os.close(descriptor)
             with contextlib.suppress(FileNotFoundError):
                 part.unlink()
-            _fsync_directory(destination.parent)
+            fsync_directory(destination.parent)
             raise

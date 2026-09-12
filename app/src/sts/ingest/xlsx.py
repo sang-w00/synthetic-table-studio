@@ -21,6 +21,7 @@ import pyarrow.parquet as pq
 from openpyxl import load_workbook
 
 from sts.domain import DomainError, ErrorCode
+from sts.storage.portable import fsync_directory
 
 _GIB = 1024**3
 _MIB = 1024**2
@@ -715,14 +716,6 @@ def _fsync_file(path: Path) -> None:
         os.close(descriptor)
 
 
-def _fsync_directory(path: Path) -> None:
-    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-    try:
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
-
-
 def convert_xlsx_to_raw_parquet(
     source_path: str | os.PathLike[str],
     output_path: str | os.PathLike[str],
@@ -840,7 +833,7 @@ def convert_xlsx_to_raw_parquet(
             ) from error
         published = True
         part.unlink()
-        _fsync_directory(output.parent)
+        fsync_directory(output.parent)
         return XlsxConversionResult(
             path=output,
             selected_sheet=sheet.name,

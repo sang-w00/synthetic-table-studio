@@ -4,6 +4,13 @@
 
 ### Added
 
+- Windows x86_64 오프라인 번들을 추가했습니다(`TARGET_OS=windows ./scripts/build-offline-bundle`).
+  Windows에는 셸 shim이 없으므로 환경마다 인터프리터 사본을 `<환경>/.venv`에 두고, 그
+  인터프리터의 `site-packages`에 해당 환경의 vendor 폴더만 가리키는 `.pth`를 넣어 네 환경
+  분리를 그대로 유지합니다. 실행은 `run.bat`이며 압축은 zip입니다. 압축 678 MB, 해제
+  2.0 GB로, Linux 번들보다 작은 것은 Windows용 `torch`에 CUDA가 없기 때문입니다. 같은
+  이유로 Windows에서는 합성 엔진이 CPU에서만 동작합니다.
+
 - MIT License를 추가했습니다. 저작권 표시와 라이선스 전문을 유지하면 상업적 이용을 포함해
   자유롭게 사용·수정·배포할 수 있으며, 오프라인 번들에도 라이선스 파일이 함께 들어갑니다.
 - README에 생성 모드 요약, 저장소 구성 표, 라이선스 절을 추가하고 `m4` gate 이름의 의미를
@@ -39,6 +46,13 @@
 - 페이지마다 나던 favicon 404를 없앴습니다.
 
 ### Fixed
+
+- POSIX 전용 API에 직접 의존하던 부분을 정리해 Windows에서도 동작하도록 했습니다. 파일
+  잠금과 디렉터리 fsync는 `sts.storage.portable` 한 곳으로 모아 POSIX는 `fcntl`, Windows는
+  `msvcrt`를 쓰며, 흩어져 있던 아홉 개의 디렉터리 fsync 헬퍼도 여기로 합쳤습니다. worker
+  인터프리터 경로와 `scripts/serve`의 재실행도 플랫폼을 구분합니다. Windows에는 디렉터리
+  fsync에 해당하는 동작이 없어 publish의 내구성이 POSIX보다 약하며, 이 차이는 README와
+  해당 모듈에 명시했습니다.
 
 - 프로파일러가 소수 열을 `정수`로 제안하던 근본 원인을 고쳤습니다. DuckDB 1.5는 `'1.2'`를
   BIGINT로 캐스팅할 때 반올림해 성공시키므로 castability만 보던 제안이 정규화기의 정수 판정과

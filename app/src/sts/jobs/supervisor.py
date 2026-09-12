@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
 import time
 from pathlib import Path
 from typing import Literal
@@ -64,7 +65,16 @@ class WorkerSupervisor:
 
     def runtime_for(self, kind: Literal["argn", "dpmm", "eval"]) -> WorkerRuntime:
         worker_root = self.project_root / "workers" / kind
-        interpreter = worker_root / ".venv" / "bin" / "python"
+        # Virtualenvs put the interpreter in bin/ on POSIX and Scripts/ on
+        # Windows, and the Windows offline bundle keeps a whole interpreter at
+        # the virtualenv root rather than a shim, so all three are accepted.
+        venv = worker_root / ".venv"
+        candidates = (
+            (venv / "Scripts" / "python.exe", venv / "python.exe")
+            if sys.platform == "win32"
+            else (venv / "bin" / "python",)
+        )
+        interpreter = next((path for path in candidates if path.is_file()), candidates[0])
         source_root = worker_root / "src"
         if not interpreter.is_file():
             raise FileNotFoundError(f"locked {kind} worker interpreter not found: {interpreter}")

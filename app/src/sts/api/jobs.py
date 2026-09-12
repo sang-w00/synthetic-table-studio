@@ -58,6 +58,7 @@ from sts.rules.execution import (
 )
 from sts.storage import CatalogRepository, WorkspaceLayout
 from sts.storage.atomic import sha256_file
+from sts.storage.portable import fsync_directory
 from sts.storage.repository import JobRecord, LedgerRunState, OwnerType
 from sts.storage.resources import (
     ArtifactComponent,
@@ -84,14 +85,6 @@ def _default_probe_path(name: str) -> Path:
     return Path(__file__).resolve().parents[4] / "probes" / "results" / name
 
 
-def _fsync_directory(path: Path) -> None:
-    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-    try:
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
-
-
 def _atomic_bytes(path: Path, content: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{uuid4().hex}.part")
@@ -101,7 +94,7 @@ def _atomic_bytes(path: Path, content: bytes) -> None:
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, path)
-        _fsync_directory(path.parent)
+        fsync_directory(path.parent)
     finally:
         temporary.unlink(missing_ok=True)
 
@@ -117,7 +110,7 @@ def _write_parquet_atomic(path: Path, table: Any) -> None:
         finally:
             os.close(descriptor)
         os.replace(temporary, path)
-        _fsync_directory(path.parent)
+        fsync_directory(path.parent)
     finally:
         temporary.unlink(missing_ok=True)
 

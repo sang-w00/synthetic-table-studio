@@ -10,6 +10,8 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from sts.storage.portable import fsync_directory
+
 PROTOCOL_VERSION = "1.0"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
@@ -235,14 +237,6 @@ def _write_all(fd: int, data: bytes) -> None:
         if written <= 0:
             raise OSError("short write")
         view = view[written:]
-
-
-def fsync_directory(path: Path) -> None:
-    fd = os.open(path, os.O_RDONLY)
-    try:
-        os.fsync(fd)
-    finally:
-        os.close(fd)
 
 
 def write_result_atomic(path: Path, result: WorkerResultEnvelope) -> None:

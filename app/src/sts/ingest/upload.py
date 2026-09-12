@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 import re
@@ -15,6 +14,7 @@ from uuid import UUID, uuid4
 
 from sts.domain import DomainError, ErrorCode
 from sts.storage import AtomicPublisher, PublishedFile, WorkspaceLayout, verify_regular_file
+from sts.storage.portable import fsync_directory, lock_exclusive, unlock
 
 MAX_UPLOAD_BYTES = 8 * 1024**3
 MAX_UPLOAD_CHUNK_BYTES = 64 * 1024**2
@@ -122,7 +122,7 @@ class UploadManager:
                 os.fsync(descriptor)
             finally:
                 os.close(descriptor)
-            _fsync_directory(directory)
+            fsync_directory(directory)
             metadata = {
                 "version": "1.0",
                 "dataset_id": str(identifier),
@@ -135,7 +135,7 @@ class UploadManager:
                 _write_metadata(directory / _METADATA_NAME, metadata)
             except Exception:
                 part.unlink(missing_ok=True)
-                _fsync_directory(directory)
+                fsync_directory(directory)
                 raise
             return UploadSession(
                 dataset_id=identifier,
@@ -228,7 +228,7 @@ class UploadManager:
             if metadata["state"] == UploadState.STAGED.value:
                 published = self.publisher.verify(relative_path, expected_sha256, expected_size)
                 (directory / _PART_NAME).unlink(missing_ok=True)
-                _fsync_directory(directory)
+                fsync_directory(directory)
                 return published
 
             part = directory / _PART_NAME
@@ -274,7 +274,7 @@ class UploadManager:
             )
             _write_metadata(directory / _METADATA_NAME, staged_metadata)
             part.unlink(missing_ok=True)
-            _fsync_directory(directory)
+            fsync_directory(directory)
             return published
 
     def _load_metadata(self, directory: Path, *, required: bool = True) -> dict[str, object] | None:
@@ -414,10 +414,10 @@ def _exclusive_lock(path: Path) -> Iterator[BinaryIO]:
     )
     stream = os.fdopen(descriptor, "a+b", closefd=True)
     try:
-        fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+        lock_exclusive(stream.fileno())
         yield stream
     finally:
-        fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+        unlock(stream.fileno())
         stream.close()
 
 
@@ -438,12 +438,4 @@ def _write_metadata(path: Path, value: dict[str, object]) -> None:
     else:
         os.close(descriptor)
     os.replace(temporary, path)
-    _fsync_directory(path.parent)
-
-
-def _fsync_directory(directory: Path) -> None:
-    descriptor = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-    try:
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
+    fsync_directory(path.parent)

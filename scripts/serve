@@ -17,14 +17,34 @@ from typing import Any
 from urllib.parse import urlsplit
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-APP_PYTHON = PROJECT_ROOT / "app" / ".venv" / "bin" / "python"
-if APP_PYTHON.is_file() and os.environ.get("STS_SERVE_VENV") != "1":
-    environment = {**os.environ, "STS_SERVE_VENV": "1"}
-    os.execve(
-        APP_PYTHON,
-        [str(APP_PYTHON), str(Path(__file__).resolve()), *sys.argv[1:]],
-        environment,
+
+
+def _app_interpreter() -> Path | None:
+    """The application virtualenv interpreter, in whichever layout exists.
+
+    POSIX virtualenvs use bin/python. Windows uses Scripts/python.exe, and the
+    Windows offline bundle keeps a whole interpreter at the virtualenv root, so
+    both spellings are accepted there.
+    """
+    venv = PROJECT_ROOT / "app" / ".venv"
+    candidates = (
+        (venv / "Scripts" / "python.exe", venv / "python.exe")
+        if sys.platform == "win32"
+        else (venv / "bin" / "python",)
     )
+    return next((candidate for candidate in candidates if candidate.is_file()), None)
+
+
+APP_PYTHON = _app_interpreter()
+if APP_PYTHON is not None and os.environ.get("STS_SERVE_VENV") != "1":
+    environment = {**os.environ, "STS_SERVE_VENV": "1"}
+    arguments = [str(APP_PYTHON), str(Path(__file__).resolve()), *sys.argv[1:]]
+    if sys.platform == "win32":
+        # Windows has no exec that replaces the process; os.execve there detaches
+        # the child and returns an exit code the caller cannot see. Waiting on a
+        # child and forwarding its status keeps Ctrl-C and the exit code intact.
+        raise SystemExit(subprocess.call(arguments, env=environment))
+    os.execve(APP_PYTHON, arguments, environment)
 APP_SOURCE = PROJECT_ROOT / "app" / "src"
 if str(APP_SOURCE) not in sys.path:
     sys.path.insert(0, str(APP_SOURCE))

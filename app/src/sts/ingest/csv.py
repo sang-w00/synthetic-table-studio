@@ -3,7 +3,6 @@ from __future__ import annotations
 import codecs
 import contextlib
 import csv as csv_module
-import fcntl
 import hashlib
 import io
 import os
@@ -19,6 +18,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from sts.domain import DomainError, ErrorCode
+from sts.storage.portable import fsync_directory, lock_exclusive, unlock
 
 CSV_SAMPLE_BYTES = 8 * 1024**2
 CSV_MAX_COLUMNS = 70
@@ -343,7 +343,7 @@ def convert_csv_to_raw_parquet(
             os.fsync(descriptor)
         finally:
             os.close(descriptor)
-        _fsync_directory(destination.parent)
+        fsync_directory(destination.parent)
         _publish_immutable(temporary, destination)
     except Exception:
         if writer is not None:
@@ -667,24 +667,16 @@ def _publish_immutable(temporary: Path, destination: Path) -> None:
     lock_path = destination.parent / ".publication.lock"
     descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
     try:
-        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        lock_exclusive(descriptor)
         if destination.exists() or destination.is_symlink():
             raise DomainError(
                 ErrorCode.IMMUTABLE_PATH_EXISTS,
                 f"immutable artifact path already exists: {destination.name}",
             )
         os.rename(temporary, destination)
-        _fsync_directory(destination.parent)
+        fsync_directory(destination.parent)
     finally:
-        fcntl.flock(descriptor, fcntl.LOCK_UN)
-        os.close(descriptor)
-
-
-def _fsync_directory(directory: Path) -> None:
-    descriptor = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-    try:
-        os.fsync(descriptor)
-    finally:
+        unlock(descriptor)
         os.close(descriptor)
 
 

@@ -11,6 +11,7 @@ import pyarrow.parquet as pq
 
 from sts.domain import ColumnKind, ColumnSchema, DomainError, ErrorCode
 from sts.storage.atomic import sha256_file
+from sts.storage.portable import fsync_directory
 
 MAX_COLUMNS = 70
 ROW_GROUP_TARGET_BYTES = 192 * 1024 * 1024
@@ -22,14 +23,6 @@ def _literal(value: str) -> str:
 
 def _identifier(value: str) -> str:
     return '"' + value.replace('"', '""') + '"'
-
-
-def _fsync_directory(path: Path) -> None:
-    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-    try:
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
 
 
 @dataclass(frozen=True, slots=True)
@@ -243,9 +236,9 @@ def normalize_to_parquet(
             os.fsync(descriptor)
         finally:
             os.close(descriptor)
-        _fsync_directory(destination.parent)
+        fsync_directory(destination.parent)
         os.rename(part, destination)
-        _fsync_directory(destination.parent)
+        fsync_directory(destination.parent)
         digest, size = sha256_file(destination)
         return NormalizationResult(
             path=destination,

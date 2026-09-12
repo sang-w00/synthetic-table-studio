@@ -6,14 +6,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from sts.domain import DomainError, ErrorCode
-
-
-def fsync_directory(directory: Path) -> None:
-    descriptor = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-    try:
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
+from sts.storage.portable import fsync_directory
 
 
 def temporary_output_path(destination: str | Path) -> tuple[Path, Path]:
